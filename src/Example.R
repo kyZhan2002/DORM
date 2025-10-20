@@ -1,6 +1,7 @@
-source('DataGeneration3.R')
-source('Functions3.R')
-source('Tuning.R')
+library(here)
+source(here('src', 'DataGeneration3.R'))
+source(here('src', 'Functions3.R'))
+source(here('src', 'Tuning.R'))
 
 ################################
 
@@ -191,6 +192,60 @@ opt.beta = (1-s)*P + s* Q %*% dts_star[1:L]
 dt_MI = opt_delta(P,Q,Sigma0,1)
 beta_MI = Q %*% dt_MI
 # cat("\n delta_MI is",dt_MI,"\n")
+
+##############################################
+##############################################
+# Example: Conditional on A (condA) Model
+
+## Generate data with mixture conditional on A
+source(here('src', 'DataGen_CondA.R'))
+
+L = 5
+q = 4
+p = 195
+ptemp = 6
+
+Nlist = rep(500, 5)
+nlist = rep(300, 5)
+n0 = 500
+
+mixture = c(0.5, 0, 0.5, 0, 0)  # Target mixture weights
+s = 0.2                          # Perturbation probability
+delta = c(0, 0.5, 0, 0.5, 0)    # Perturbation mixture
+
+BETA = 1 * matrix(c(0,4,4,3,-3,  0.5,-0.2,0,0,1,0,
+                    -3,3,-1,3,-3, 0,0.5,-0.2,0,0,1,
+                    -3,-3,0,-3,-3,  0,0,0.2,-0.5,0,1,
+                    -6,6,6,6,-6,  1,0,0,0.2,-0.5,0,
+                    -3,3,0,0,1, 0,0,0,1,0.2,-0.5),
+                  nrow=L, ncol=ptemp+q+1, byrow=TRUE)
+
+# Generate data conditional on A
+Data_condA = Generate_Simulation_Data_CondA(L, p, q, Nlist, nlist, n0, mixture,
+                                             delta, s, BETA, ptemp)
+
+# Run DORM with condA=TRUE to use conditional density ratio
+smax = 0.25
+result_condA = get_DORM_beta(Data_condA$Xlist, Data_condA$Xtrainlist, 
+                             Data_condA$Ylist, Data_condA$Ytrainlist,
+                             Data_condA$X0, Data_condA$X0train, nlist, q, smax,
+                             penalty = FALSE, alpha = 0.5, rho_pseudo = 'pool', 
+                             dr_type = "rf", normalize = FALSE, condA = TRUE)
+
+cat("\n=== CondA Model Results ===\n")
+cat("Estimated rho:", result_condA$rho, "\n")
+cat("Beta_DORM (first 5 coefs):", result_condA$beta_star[1:5], "\n")
+
+# Compare with standard model (condA=FALSE)
+result_standard = get_DORM_beta(Data_condA$Xlist, Data_condA$Xtrainlist, 
+                                Data_condA$Ylist, Data_condA$Ytrainlist,
+                                Data_condA$X0, Data_condA$X0train, nlist, q, smax,
+                                penalty = FALSE, alpha = 0.5, rho_pseudo = 'pool', 
+                                dr_type = "rf", normalize = FALSE, condA = FALSE)
+
+cat("\n=== Standard Model Results ===\n")
+cat("Estimated rho:", result_standard$rho, "\n")
+cat("Beta_DORM (first 5 coefs):", result_standard$beta_star[1:5], "\n")
 
 
 
