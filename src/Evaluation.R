@@ -1,9 +1,10 @@
 # This script processes beta.
 
-source('/n/data1/hsph/biostat/celehs/lab/kez641/REMIX/SourceCode/DataGeneration3.R')
-source('/n/data1/hsph/biostat/celehs/lab/kez641/REMIX/SourceCode/Functions3.R')
-source('/n/data1/hsph/biostat/celehs/lab/kez641/REMIX/SourceCode/Tuning.R')
+library(here)
 
+source(here('src', 'DataGeneration3.R'))
+source(here('src', 'Functions3.R'))
+source(here('src', 'Tuning.R'))
 
 # fourth site is away from others.
 

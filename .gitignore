@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+venv/
+env/
+*.egg-info/
+__pycache__/
+*.pyc
+*.pyo
+
+# Build outputs
+dist/
+build/
+*.o
+*.so
+*.exe
+*.dll
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs and temporary files
+*.log
+*.tmp
+.cache/
+.pytest_cache/
+
+# Environment files
+.env
+.env.local
+*.secret
+
+# Simulation results
+simulation_results/
+results/
+*.sim
+*.out
+output/
+data/output/
