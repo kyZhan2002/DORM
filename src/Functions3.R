@@ -14,7 +14,7 @@ simplex_uniform = function(dim){
   return(vec)
 }
 
-or_estimation_ML = function(Xlist,X0,dr_type = 'rf', report = TRUE){
+or_estimation_ML = function(Xlist,X0,dr_type = 'rf', report = TRUE, condA = FALSE, q = NULL){
   
   ## This function estimates the odds ratio using random forest.
   
@@ -22,6 +22,14 @@ or_estimation_ML = function(Xlist,X0,dr_type = 'rf', report = TRUE){
   Nlist = sapply(Xlist, nrow)
   n0 = nrow(X0)
   modellist = list()
+  
+  # If condA is TRUE, also fit models for A only
+  if(condA){
+    if(is.null(q)){
+      stop("q must be provided when condA = TRUE")
+    }
+    modellist_A = list()
+  }
   
   for (l in 1:L) {
     # 0 stands for target and 1 stands for source l
@@ -54,6 +62,20 @@ or_estimation_ML = function(Xlist,X0,dr_type = 'rf', report = TRUE){
       # Save the tuned model and the best parameters
       modellist[[l]] = rfmodel
       
+      # Fit model for A only if condA = TRUE
+      if(condA){
+        X_A = X[, 1:q]
+        tune_grid_A = expand.grid(
+          mtry = floor(sqrt(ncol(X_A)))
+        )
+        rfmodel_A = train(
+          x = X_A, y = Y, 
+          method = "rf", 
+          trControl = train_control, 
+          tuneGrid = tune_grid_A,
+        )
+        modellist_A[[l]] = rfmodel_A
+      }
       
     }else if(dr_type == 'nnet'){
       tune_grid = expand.grid(
@@ -75,6 +97,20 @@ or_estimation_ML = function(Xlist,X0,dr_type = 'rf', report = TRUE){
       # Save the tuned model and the best parameters
       modellist[[l]] = nnet_model
       
+      # Fit model for A only if condA = TRUE
+      if(condA){
+        X_A = X[, 1:q]
+        nnet_model_A = train(
+          x = X_A, y = Y,
+          method = "nnet",
+          trControl = train_control,
+          tuneGrid = tune_grid,
+          trace = FALSE,                 
+          MaxNWts = 8000,                
+        )
+        modellist_A[[l]] = nnet_model_A
+      }
+      
     }else if(dr_type == 'XGB'){
       tune_grid = expand.grid(
         nrounds = c(50,100),
@@ -95,6 +131,19 @@ or_estimation_ML = function(Xlist,X0,dr_type = 'rf', report = TRUE){
       
       # Save the tuned model and the best parameters
       modellist[[l]] = xgb_model
+      
+      # Fit model for A only if condA = TRUE
+      if(condA){
+        X_A = X[, 1:q]
+        xgb_model_A = train(
+          x = X_A, y = Y,
+          method = "xgbTree",
+          trControl = train_control,
+          tuneGrid = tune_grid,
+          verbosity = 0
+        )
+        modellist_A[[l]] = xgb_model_A
+      }
     }else{
       stop("Wrong dr_type.")
     }
@@ -106,15 +155,28 @@ or_estimation_ML = function(Xlist,X0,dr_type = 'rf', report = TRUE){
     }
   }
   
+  if(condA){
+    return(list(modellist = modellist, modellist_A = modellist_A))
+  }else{
   return(modellist)
+  }
 } 
 
-or_estimation_logit = function(Xlist,Xtar,alpha_dr = 0.5){
+or_estimation_logit = function(Xlist,Xtar,alpha_dr = 0.5, condA = FALSE, q = NULL){
   
   ## This function estimates logistic model for odds ratio = exp(x'b)
   
   L = length(Xlist)
   modellist = list()
+  
+  # If condA is TRUE, also fit models for A only
+  if(condA){
+    if(is.null(q)){
+      stop("q must be provided when condA = TRUE")
+    }
+    modellist_A = list()
+  }
+  
   for(l in 1:L){
     Xsou = Xlist[[l]]
     y1 = rep(1, nrow(Xsou))  # source for 1
@@ -129,21 +191,35 @@ or_estimation_logit = function(Xlist,Xtar,alpha_dr = 0.5){
     
     final_model = glmnet(X, y, alpha = alpha_dr, lambda = best_lambda, family = "binomial")
     modellist[[l]] = final_model
+    
+    # Fit model for A only if condA = TRUE
+    if(condA){
+      X_A = X[, 1:q]
+      cv_fit_A = cv.glmnet(X_A, y, alpha = alpha_dr, family = "binomial")
+      best_lambda_A = cv_fit_A$lambda.min
+      final_model_A = glmnet(X_A, y, alpha = alpha_dr, lambda = best_lambda_A, family = "binomial")
+      modellist_A[[l]] = final_model_A
+    }
   }
-  return(modellist)
   
+  if(condA){
+    return(list(modellist = modellist, modellist_A = modellist_A))
+  }else{
+    return(modellist)
+  }
 }
 
 
-dratio_ML = function(modellist,X0,L,Nlist,n0,bound = 1e6,normalize = FALSE){
+dratio_ML = function(modellist,X0,L,Nlist,n0,bound = 1e6,normalize = FALSE, condA = FALSE, modellist_A = NULL){
   
   ## The function output a L*n0 density ratio matrix, each row is density ratio:dP(target X0) to dP(source)
   ## We multiply nl/n0 here!!! This is density ratio
   
   X0 = X0[,-1] # Remove interception
+  X0 = as.data.frame(X0)  # Convert once outside the loop
+
   dr = matrix(0,nrow=L,ncol=nrow(X0))
   for(l in 1:L){
-    X0 = as.data.frame(X0)
     pred = predict(modellist[[l]],X0,type = "prob")
     ratio = ifelse(pred[,2] == 0, bound, pred[,1] / pred[,2])
     ratio[ratio==0] = 1/bound
@@ -159,11 +235,41 @@ dratio_ML = function(modellist,X0,L,Nlist,n0,bound = 1e6,normalize = FALSE){
       dr[l,] = nor_const * dr[l,]
     }
   }
+  
+  # If condA = TRUE, compute conditional density ratio
+  if(condA){
+    if(is.null(modellist_A)){
+      stop("modellist_A must be provided when condA = TRUE")
+    }
+    
+    dr_A = matrix(0,nrow=L,ncol=nrow(X0))
+    q_A = ncol(X0) - ncol(modellist_A[[1]]$trainingData) + 1  # Infer q from model
+    X0_A = X0[, 1:q_A]
+    
+    for(l in 1:L){
+      pred_A = predict(modellist_A[[l]],X0_A,type = "prob")
+      ratio_A = ifelse(pred_A[,2] == 0, bound, pred_A[,1] / pred_A[,2])
+      ratio_A[ratio_A==0] = 1/bound
+      ratio_A = pmax(1/bound, pmin(ratio_A, bound))
+      dr_A[l,] = Nlist[l] / n0 * ratio_A
+    }
+    
+    # Conditional density ratio: dr(X) / dr(A)
+    dr = dr / dr_A
+    
+    if(normalize){
+      for(l in 1:L){
+        nor_const = mean(1/dr[l,])
+        dr[l,] = nor_const * dr[l,]
+      }
+    }
+  }
+  
   return(dr)
 }
 
 
-dratio_logit = function(modellist,X0,L,Nlist,n0,bound=1e6,normalize = FALSE){
+dratio_logit = function(modellist,X0,L,Nlist,n0,bound=1e6,normalize = FALSE, condA = FALSE, modellist_A = NULL, q = NULL){
   
   # use logistic regression to get density ratio!
   
@@ -172,17 +278,50 @@ dratio_logit = function(modellist,X0,L,Nlist,n0,bound=1e6,normalize = FALSE){
     model = modellist[[l]]
     new_X = X0[,-1] ## remove the intercept which already exist in X.
     log_density_ratio = predict(model, new_X, type = "link")
-    density_ratio = exp(log_density_ratio)
+    # exp(log_density_ratio) = P(Y=1|X)/P(Y=0|X) = dP_source/dP_target
+    # We want dP_target/dP_source, so we take 1/exp(log_density_ratio)
+    density_ratio = 1 / exp(log_density_ratio)
     density_ratio = pmax(1/bound, pmin(density_ratio, bound))
-    dr[l,] = Nlist[l]/n0 * 1/density_ratio
+    dr[l,] = Nlist[l]/n0 * density_ratio
     
     # mean of (1/dr[l,]) should be 1.
     if(normalize){
       nor_const = mean(1/dr[l,])
       dr[l,] = nor_const * dr[l,]
     }
-    
   }
+  
+  # If condA = TRUE, compute conditional density ratio
+  if(condA){
+    if(is.null(modellist_A)){
+      stop("modellist_A must be provided when condA = TRUE")
+    }
+    if(is.null(q)){
+      stop("q must be provided when condA = TRUE for dratio_logit")
+    }
+    
+    dr_A = matrix(0,nrow=L,ncol=nrow(X0))
+    new_X_A = new_X[, 1:q]
+    
+    for(l in 1:L){
+      model_A = modellist_A[[l]]
+      log_density_ratio_A = predict(model_A, new_X_A, type = "link")
+      density_ratio_A = 1 / exp(log_density_ratio_A)
+      density_ratio_A = pmax(1/bound, pmin(density_ratio_A, bound))
+      dr_A[l,] = Nlist[l]/n0 * density_ratio_A
+    }
+    
+    # Conditional density ratio: dr(X) / dr(A)
+    dr = dr / dr_A
+    
+    if(normalize){
+      for(l in 1:L){
+        nor_const = mean(1/dr[l,])
+        dr[l,] = nor_const * dr[l,]
+      }
+    }
+  }
+  
   return(dr)
 }
 
@@ -236,23 +375,23 @@ mulcvxr = function(L, dr){
 
 posterior = function(rho,dr,n0){
   
-  # Calculate posterior eta from rho
+  # Calculate posterior eta from rho (vectorized version)
   
-  L =length(rho)
-  post = matrix(data = NA,nrow = n0, ncol = L)
-  for(l in 1:L){
-    post[,l]= rho[l] / dr[l,] 
-  }
-  for(i in 1:n0){
-    post[i,]=post[i,]/sum(post[i,])
-  }
+  L = length(rho)
+  # Vectorized computation: rho[l] / dr[l,] for all l at once
+  post = sweep(1/dr, 2, rho, "*")  # equivalent to rho / dr but faster
+  post = t(post)  # transpose to get n0 x L
+  
+  # Normalize rows to sum to 1
+  post = post / rowSums(post)
+  
   return(post)
 }
 
 DRcoef_calculation = function(X0,Xlist,Ylist,nlist,post,postlist,drlist,
                             betalist,q){
   
-  # Calculate the doubly robust coefficients
+  # Calculate the doubly robust coefficients (vectorized version)
   
   L = length(Xlist)
   Nlist = sapply(Xlist, nrow)
@@ -262,39 +401,33 @@ DRcoef_calculation = function(X0,Xlist,Ylist,nlist,post,postlist,drlist,
   Q = matrix(data = 0,nrow = q+1,ncol = L)
   
   for(l in 1:L){
-    sum = rep(0, q+1)
-    Ql2 = rep(0, q+1)
-    res = Ylist[[l]] - Xlist[[l]][1:nlist[l],] %*% betalist[[l]]
-    for(j in 1:nlist[l]){
-      w = drlist[[l]][l,j] 
-      r = res[j]
-      po = postlist[[l]][j,l]
-      temp = w * r * Xlist[[l]][j,1:(q+1)]
-      Ql2 = Ql2 + temp
-      sum = sum + po * temp
-    }
-    sum = (1/nlist[l]) * sum
-    Ql2 = (1/nlist[l]) * Ql2
-    secondPmat[l,] = sum
+    # Vectorized computation for source data
+    n = nlist[l]
+    X_source = Xlist[[l]][1:n, 1:(q+1)]
+    res = Ylist[[l]] - Xlist[[l]][1:n,] %*% betalist[[l]]
+    w = drlist[[l]][l, 1:n]
+    po_source = postlist[[l]][1:n, l]
     
-    sum = rep(0, q+1)
-    Ql1 = rep(0, q+1)
-    for(i in 1:n0){
-      po = post[i,l]
-      m = (betalist[[l]] %*% X0[i,])[1]
-      temp = m * X0[i,1:(q+1)]
-      Ql1 = Ql1 + temp
-      sum = sum + po * temp
-    }
-    sum = (1/n0) * sum
-    Ql1 = (1/n0) * Ql1
-    firstPmat[l,] = sum
+    # Vectorized outer product sum: sum_j w_j * r_j * po_j * X_j
+    weighted_res = w * res * X_source
+    Ql2 = colSums(weighted_res) / n
+    secondPmat[l,] = colSums(po_source * weighted_res) / n
+    
+    # Vectorized computation for target data
+    X_target = X0[, 1:(q+1)]
+    m = X0 %*% betalist[[l]]
+    po_target = post[, l]
+    
+    weighted_m = m * X_target
+    Ql1 = colSums(weighted_m) / n0
+    firstPmat[l,] = colSums(po_target * weighted_m) / n0
+    
     Q[,l] = Ql1 + Ql2 
   }
   
   P = colSums(firstPmat) + colSums(secondPmat)
   
-  out = list(preP = P,preQ = Q)
+  out = list(preP = P, preQ = Q)
   return(out)
   
 }
@@ -315,25 +448,26 @@ pseudo_solver = function(A,b,trc = 1e-10){
   M[1:p,1:p] = A
   M[p+1,1:p] = b
   M[1:p,p+1] = b
-  M[p+1,p+1] = b %*% b
+  M[p+1,p+1] = sum(b^2)  # More efficient than b %*% b
   
-  Evalue = eigen(M)$values
+  eig = eigen(M, symmetric = TRUE)
+  Evalue = eig$values
   Evalue[Evalue < trc] = 0
+  U = eig$vectors
   
-  #if(length(which(Evalue != 0)) > p){
-  #  stop("Equation system unsolvable.")
-  #}
+  # Only compute for non-zero eigenvalues
+  nonzero_idx = which(Evalue > 0)
+  if(length(nonzero_idx) > p){
+    nonzero_idx = nonzero_idx[1:p]
+  }
   
-  Dhalf = diag(sqrt(Evalue))
-  U = eigen(M)$vectors
+  Dhalf = sqrt(Evalue[nonzero_idx])
+  C = t(U[, nonzero_idx] %*% diag(Dhalf))
   
-  C = U[,1:p] %*% Dhalf[1:p,1:p]
-  C = t(C)
+  pX = C[, 1:p]
+  pY = C[, p+1]
   
-  pX = C[,1:p]
-  pY = C[,p+1]
-  
-  out = list(pX = pX, pY= pY)
+  out = list(pX = pX, pY = pY)
   return(out)
   
 }
@@ -357,7 +491,7 @@ PQCalculation = function(X0,Xlist,Ylist,X0train,Xtrainlist,Ytrainlist,nlist,post
   
     Q = matrix(data = 0,nrow = q+1,ncol = L)
     
-    lenl = 40
+    lenl = 30
     lambda_seq = 10^seq(-3, 0, length.out = lenl)
     DRloss_seq = rep(0,lenl)
     Sigmat = (1/n0t) * t(X0train[,1:(q+1)]) %*% X0train[,1:(q+1)]
@@ -409,36 +543,33 @@ PQCalculation = function(X0,Xlist,Ylist,X0train,Xtrainlist,Ytrainlist,nlist,post
 }
 
 
-opt_delta = function(P,Q,Sigma0,s){
+# opt_delta = function(P,Q,Sigma0,s){
   
-  ## This function optimizes quadratic form of delta. (NOT USED IN NEWEST VERSION)
+#   ## This function optimizes quadratic form of delta. (NOT USED IN NEWEST VERSION)
   
-  L = ncol(Q)
-  opt.weight=rep(NA, L)
-  v = Variable(L)
+#   L = ncol(Q)
+#   opt.weight=rep(NA, L)
+#   v = Variable(L)
   
-  Gamma = s*t(Q) %*% Sigma0 %*% Q
+#   Gamma = s*t(Q) %*% Sigma0 %*% Q
   
-  linterm = 2*(1-s)*t(P) %*% Sigma0 %*% Q
+#   linterm = 2*(1-s)*t(P) %*% Sigma0 %*% Q
   
-  Diag.matrix=diag(eigen(Gamma)$values)
-  for(ind in 1:L){
-    Diag.matrix[ind,ind]=max(Diag.matrix[ind,ind],1e-6)
-  }
+#   # Make Gamma positive definite more efficiently
+#   eig = eigen(Gamma, symmetric = TRUE)
+#   eig$values = pmax(eig$values, 1e-6)
+#   Gamma.positive = eig$vectors %*% diag(eig$values) %*% t(eig$vectors)
   
-  Gamma.positive=eigen(Gamma)$vectors%*%Diag.matrix%*%t(eigen(Gamma)$vectors)
-  objective = Minimize(quad_form(v,Gamma.positive) + linterm %*% v)
+#   objective = Minimize(quad_form(v,Gamma.positive) + linterm %*% v)
   
-  constraints = list(sum(v)== 1, v>=0 )
-  prob.weight= Problem(objective, constraints)
-  result= solve(prob.weight)
-  opt.status=result$status
-  opt.sol=result$getValue(v)
-  for(l in 1:L){
-    opt.weight[l]=opt.sol[l]*(abs(opt.sol[l])>1e-8)
-  }
-  return(opt.weight)
-}
+#   constraints = list(sum(v)== 1, v>=0 )
+#   prob.weight= Problem(objective, constraints)
+#   result= solve(prob.weight)
+#   opt.status=result$status
+#   opt.sol=result$getValue(v)
+#   opt.weight = ifelse(abs(opt.sol) > 1e-8, opt.sol, 0)
+#   return(opt.weight)
+# }
 
 opt_s_delta = function(P,Q,Sigma0,smax){
   
@@ -451,11 +582,11 @@ opt_s_delta = function(P,Q,Sigma0,smax){
   QP = cbind(Q,P)
   Gamma = t(QP) %*% Sigma0 %*% QP
   
-  Diag.matrix=diag(eigen(Gamma)$values)
-  for(ind in 1:L){
-    Diag.matrix[ind,ind]=max(Diag.matrix[ind,ind],1e-6)
-  }
-  Gamma.positive=eigen(Gamma)$vectors%*%Diag.matrix%*%t(eigen(Gamma)$vectors)
+  # Make Gamma positive definite more efficiently
+  eig = eigen(Gamma, symmetric = TRUE)
+  eig$values = pmax(eig$values, 1e-6)
+  Gamma.positive = eig$vectors %*% diag(eig$values) %*% t(eig$vectors)
+  
   eps = 1e-9
   constraints = list(
     sum(sd) == 1, 
@@ -469,9 +600,7 @@ opt_s_delta = function(P,Q,Sigma0,smax){
   result= solve(prob.weight)
   opt.status=result$status
   opt.sol=result$getValue(sd)
-  for(l in 1:(L+1)){
-    opt.weight[l]=opt.sol[l] * (abs(opt.sol[l])>1e-8)
-  }
+  opt.weight = ifelse(abs(opt.sol) > 1e-8, opt.sol, 0)
   opt.weight[L+1] = 1-opt.weight[L+1]
   opt.weight[1:L] = opt.weight[1:L]/opt.weight[L+1]
   return(opt.weight)
@@ -495,9 +624,9 @@ extract_half_rows2 = function(mat) {
 }
 
 maximin_s_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,smax,penalty = FALSE, alpha = 0.5,
-                          rho_pseudo = "NA", dr_type = "rf",normalize = FALSE){
+                          rho_pseudo = "NA", dr_type = "rf",normalize = FALSE, condA = FALSE){
   
-  # This is the main algorithm of calculating REMIX beta.
+  # This is the main algorithm of calculating DORM beta.
   
   L = length(Xlist)
   n0 = nrow(X0)
@@ -507,19 +636,41 @@ maximin_s_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,s
   ## Cross-fitting: using auxiliary data to train nuisance models
   
   if(dr_type == 'logit'){
-    modellist = or_estimation_logit(Xtrainlist,X0train) # density ratio model fit by aux data
+    models = or_estimation_logit(Xtrainlist,X0train, condA = condA, q = q)
+    if(condA){
+      modellist = models$modellist
+      modellist_A = models$modellist_A
+      dr = dratio_logit(modellist,X0,L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize, condA = condA, modellist_A = modellist_A, q = q)
+      drlist = list()
+      for(l in 1:L){
+        drlist[[l]] = dratio_logit(modellist,Xlist[[l]],L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize, condA = condA, modellist_A = modellist_A, q = q)
+      }
+    }else{
+      modellist = models
     dr = dratio_logit(modellist,X0,L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize)
     drlist = list()
     for(l in 1:L){
       drlist[[l]] = dratio_logit(modellist,Xlist[[l]],L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize)
     }
+    }
   }else{
-    modellist = or_estimation_ML(Xtrainlist,X0train,dr_type = dr_type) # density ratio model fit by aux data
+    models = or_estimation_ML(Xtrainlist,X0train,dr_type = dr_type, condA = condA, q = q)
+    if(condA){
+      modellist = models$modellist
+      modellist_A = models$modellist_A
+      dr = dratio_ML(modellist,X0,L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize, condA = condA, modellist_A = modellist_A)
+      drlist = list()
+      for(l in 1:L){
+        drlist[[l]] = dratio_ML(modellist,Xlist[[l]],L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize, condA = condA, modellist_A = modellist_A)
+      }
+    }else{
+      modellist = models
     dr = dratio_ML(modellist,X0,L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize)
     drlist = list()
     for(l in 1:L){
       drlist[[l]] = dratio_ML(modellist,Xlist[[l]],L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize)
     }
+  }
   }
   
   if(rho_pseudo == 'max'){
@@ -531,11 +682,25 @@ maximin_s_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,s
     Xtrainlist_pseudo[[maxind]] = extract_half_rows1(Xtrainlist[[maxind]])
     
     if(dr_type == 'logit'){
-      modellist = or_estimation_logit(Xtrainlist_pseudo,Xtrainmax) # density ratio model fit by aux data
+      modellist = or_estimation_logit(Xtrainlist_pseudo,Xtrainmax, condA = condA, q = q)
+      if(condA){
+        modellist = models$modellist
+        modellist_A = models$modellist_A
+        dr_new = dratio_logit(modellist,X0,L,Nlist = sapply(Xtrainlist_pseudo,nrow),n0 = nrow(Xtrainmax),normalize = normalize, condA = condA, modellist_A = modellist_A, q = q)
+      }else{
+        modellist = models
       dr_new = dratio_logit(modellist,X0,L,Nlist = sapply(Xtrainlist_pseudo,nrow),n0 = nrow(Xtrainmax),normalize = normalize)
+      }
     }else{
-      modellist = or_estimation_ML(Xtrainlist_pseudo,Xtrainmax,dr_type = dr_type) # density ratio model fit by aux data
+      modellist = or_estimation_ML(Xtrainlist_pseudo,Xtrainmax,dr_type = dr_type, condA = condA, q = q)
+      if(condA){
+        modellist = models$modellist
+        modellist_A = models$modellist_A
+        dr_new = dratio_ML(modellist,X0,L,Nlist = sapply(Xtrainlist_pseudo,nrow),n0 = nrow(Xtrainmax),normalize = normalize, condA = condA, modellist_A = modellist_A)
+      }else{
+        modellist = models
       dr_new = dratio_ML(modellist,X0,L,Nlist = sapply(Xtrainlist_pseudo,nrow),n0 = nrow(Xtrainmax),normalize = normalize)
+    }
     }
     
     rho = mulcvxr(L,dr_new)
@@ -548,11 +713,25 @@ maximin_s_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,s
     Xpool = do.call(rbind,lasthalf_Xtrainlist)
     
     if(dr_type == 'logit'){
-      modellist = or_estimation_logit(half_Xtrainlist,Xpool) # density ratio model fit by aux data
+      modellist = or_estimation_logit(half_Xtrainlist,Xpool, condA = condA, q = q)
+      if(condA){
+        modellist = models$modellist
+        modellist_A = models$modellist_A
+        dr_new = dratio_logit(modellist,X0,L,Nlist = sapply(half_Xtrainlist,nrow),n0 = nrow(Xpool),normalize = normalize, condA = condA, modellist_A = modellist_A, q = q)
+      }else{
+        modellist = models
       dr_new = dratio_logit(modellist,X0,L,Nlist = sapply(half_Xtrainlist,nrow),n0 = nrow(Xpool),normalize = normalize)
+      }
     }else{
-      modellist = or_estimation_ML(half_Xtrainlist,Xpool,dr_type = dr_type) # density ratio model fit by aux data
+      modellist = or_estimation_ML(half_Xtrainlist,Xpool,dr_type = dr_type, condA = condA, q = q)
+      if(condA){
+        modellist = models$modellist
+        modellist_A = models$modellist_A
+        dr_new = dratio_ML(modellist,X0,L,Nlist = sapply(half_Xtrainlist,nrow),n0 = nrow(Xpool),normalize = normalize, condA = condA, modellist_A = modellist_A)
+      }else{
+        modellist = models
       dr_new = dratio_ML(modellist,X0,L,Nlist = sapply(half_Xtrainlist,nrow),n0 = nrow(Xpool),normalize = normalize)
+    }
     }
     
     rho = mulcvxr(L,dr_new)
@@ -601,13 +780,13 @@ maximin_s_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,s
   return(out)
 }
 
-get_REMIX_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,smax,penalty = FALSE, alpha = 0.5,
-                          rho_pseudo = "NA", dr_type = "rf",normalize = FALSE){
+get_DORM_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,smax,penalty = FALSE, alpha = 0.5,
+                          rho_pseudo = "NA", dr_type = "rf",normalize = FALSE, condA = FALSE){
   
   # Use sample splitting: beta = 0.5 (betaA + betaB)
   
-  out1 = maximin_s_beta(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,smax,penalty,alpha,rho_pseudo,dr_type,normalize = normalize)
-  out2 = maximin_s_beta(Xtrainlist,Xlist,Ytrainlist,Ylist,X0train,X0,nlist,q,smax,penalty,alpha,rho_pseudo,dr_type,normalize = normalize)
+  out1 = maximin_s_beta(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,smax,penalty,alpha,rho_pseudo,dr_type,normalize = normalize, condA = condA)
+  out2 = maximin_s_beta(Xtrainlist,Xlist,Ytrainlist,Ylist,X0train,X0,nlist,q,smax,penalty,alpha,rho_pseudo,dr_type,normalize = normalize, condA = condA)
   opt.beta = 0.5 * (out1$beta_star + out2$beta_star)
   beta_MI = 0.5 * (out1$beta_MI + out2$beta_MI)
   P = 0.5 * (out1$beta_RAP + out2$beta_RAP)
