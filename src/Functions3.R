@@ -158,7 +158,7 @@ or_estimation_ML = function(Xlist,X0,dr_type = 'rf', report = TRUE, condA = FALS
   if(condA){
     return(list(modellist = modellist, modellist_A = modellist_A))
   }else{
-  return(modellist)
+    return(modellist)
   }
 } 
 
@@ -647,11 +647,11 @@ maximin_s_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,s
       }
     }else{
       modellist = models
-    dr = dratio_logit(modellist,X0,L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize)
-    drlist = list()
-    for(l in 1:L){
-      drlist[[l]] = dratio_logit(modellist,Xlist[[l]],L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize)
-    }
+      dr = dratio_logit(modellist,X0,L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize)
+      drlist = list()
+      for(l in 1:L){
+        drlist[[l]] = dratio_logit(modellist,Xlist[[l]],L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize)
+      }
     }
   }else{
     models = or_estimation_ML(Xtrainlist,X0train,dr_type = dr_type, condA = condA, q = q)
@@ -665,12 +665,12 @@ maximin_s_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,s
       }
     }else{
       modellist = models
-    dr = dratio_ML(modellist,X0,L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize)
-    drlist = list()
-    for(l in 1:L){
-      drlist[[l]] = dratio_ML(modellist,Xlist[[l]],L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize)
+      dr = dratio_ML(modellist,X0,L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize)
+      drlist = list()
+      for(l in 1:L){
+        drlist[[l]] = dratio_ML(modellist,Xlist[[l]],L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize)
+      }
     }
-  }
   }
   
   if(rho_pseudo == 'max'){
@@ -689,7 +689,7 @@ maximin_s_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,s
         dr_new = dratio_logit(modellist,X0,L,Nlist = sapply(Xtrainlist_pseudo,nrow),n0 = nrow(Xtrainmax),normalize = normalize, condA = condA, modellist_A = modellist_A, q = q)
       }else{
         modellist = models
-      dr_new = dratio_logit(modellist,X0,L,Nlist = sapply(Xtrainlist_pseudo,nrow),n0 = nrow(Xtrainmax),normalize = normalize)
+        dr_new = dratio_logit(modellist,X0,L,Nlist = sapply(Xtrainlist_pseudo,nrow),n0 = nrow(Xtrainmax),normalize = normalize)
       }
     }else{
       modellist = or_estimation_ML(Xtrainlist_pseudo,Xtrainmax,dr_type = dr_type, condA = condA, q = q)
@@ -699,8 +699,8 @@ maximin_s_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,s
         dr_new = dratio_ML(modellist,X0,L,Nlist = sapply(Xtrainlist_pseudo,nrow),n0 = nrow(Xtrainmax),normalize = normalize, condA = condA, modellist_A = modellist_A)
       }else{
         modellist = models
-      dr_new = dratio_ML(modellist,X0,L,Nlist = sapply(Xtrainlist_pseudo,nrow),n0 = nrow(Xtrainmax),normalize = normalize)
-    }
+        dr_new = dratio_ML(modellist,X0,L,Nlist = sapply(Xtrainlist_pseudo,nrow),n0 = nrow(Xtrainmax),normalize = normalize)
+      }
     }
     
     rho = mulcvxr(L,dr_new)
@@ -720,7 +720,7 @@ maximin_s_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,s
         dr_new = dratio_logit(modellist,X0,L,Nlist = sapply(half_Xtrainlist,nrow),n0 = nrow(Xpool),normalize = normalize, condA = condA, modellist_A = modellist_A, q = q)
       }else{
         modellist = models
-      dr_new = dratio_logit(modellist,X0,L,Nlist = sapply(half_Xtrainlist,nrow),n0 = nrow(Xpool),normalize = normalize)
+        dr_new = dratio_logit(modellist,X0,L,Nlist = sapply(half_Xtrainlist,nrow),n0 = nrow(Xpool),normalize = normalize)
       }
     }else{
       modellist = or_estimation_ML(half_Xtrainlist,Xpool,dr_type = dr_type, condA = condA, q = q)
@@ -730,8 +730,8 @@ maximin_s_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,s
         dr_new = dratio_ML(modellist,X0,L,Nlist = sapply(half_Xtrainlist,nrow),n0 = nrow(Xpool),normalize = normalize, condA = condA, modellist_A = modellist_A)
       }else{
         modellist = models
-      dr_new = dratio_ML(modellist,X0,L,Nlist = sapply(half_Xtrainlist,nrow),n0 = nrow(Xpool),normalize = normalize)
-    }
+        dr_new = dratio_ML(modellist,X0,L,Nlist = sapply(half_Xtrainlist,nrow),n0 = nrow(Xpool),normalize = normalize)
+      }
     }
     
     rho = mulcvxr(L,dr_new)
@@ -763,12 +763,6 @@ maximin_s_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,s
   dt_MI = opt_delta(P,Q,Sigma0,1)
   beta_MI = Q %*% dt_MI
   # cat("\n delta_MI is",dt_MI,"\n")
-  
-  # convert odds ratio to density ratio for the outcome dr.
-  #dr = matrix(0,nrow = nrow(or),ncol=ncol(or))
-  #for(l in 1:L){
-  #  dr[l,] = Nlist[l]/n0 * or[l,] # odds ratio * r = density ratio
-  #}
   
   out = list(beta_star = opt.beta,
              beta_MI = beta_MI,
@@ -805,8 +799,3 @@ get_DORM_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,sm
              DR_dP0bydPl = dr)
   return(out)
 }
-
-
-
-
-
