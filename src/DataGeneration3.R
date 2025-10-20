@@ -135,7 +135,7 @@ Generate_Simulation_Data = function(L,p,q,Nlist,nlist,n0,
   out = list('Xlist'=Xlist, 'Xtrainlist' =Xtrainlist,  
              'Ylist' = Ylist, 'Ytrainlist' = Ytrainlist,
              'X0' = X0, 'Y0'=Y0 ,'S0'=S0,  'X0train' = X0train,
-             'Assigns' = Assigns, 'Assigns_train' = Assigns_train, 'BETA' = BETA)
+             'Assigns' = Assigns, 'Assigns_Y0' = Assigns_Y0, 'Assigns_train' = Assigns_train, 'BETA' = BETA)
   ################################
   #  Nlist[l] = N_l, nlist[l] = n_l
   #  Xlist: a list of source covariates. Xlist[[l]] is N_l * (1+q+p) matrix, source l covariates.
@@ -254,7 +254,7 @@ Generate_Simulation_Data_ExtraA = function(L,p,q,exA,Nlist,nlist,n0,
     Ytrainlist[[l]] = Y
   }
   
-  X0 = matrix(data = NA, nrow = n0, ncol = p+q+1, byrow = FALSE)
+  X0 = matrix(data = NA, nrow = n0, ncol = p+q+1+exA, byrow = FALSE)
   Y0 = rep(0,n0)
   S0 = rep(0,n0)
   Assigns = rep(0,n0)
@@ -302,7 +302,7 @@ Generate_Simulation_Data_ExtraA = function(L,p,q,exA,Nlist,nlist,n0,
   out = list('Xlist'=Xlist, 'Xtrainlist' =Xtrainlist,  
              'Ylist' = Ylist, 'Ytrainlist' = Ytrainlist,
              'X0' = X0, 'Y0'=Y0 ,'S0'=S0,  'X0train' = X0train,
-             'Assigns' = Assigns, 'Assigns_train' = Assigns_train)
+             'Assigns' = Assigns, 'Assigns_train' = Assigns_train, 'BETA' = BETA)
   ################################
   #  Nlist[l] = N_l, nlist[l] = n_l
   #  Xlist: a list of source covariates. Xlist[[l]] is N_l * (1+q+p) matrix, source l covariates.
@@ -344,7 +344,7 @@ Generate_test_data = function(L,p,q,n0,
   }
   MU_A = MU_Acoef * MU_A
   
-  WtoA = 0.3* matrix(c(1,0,-1,0,
+  WtoA = 0.5* matrix(c(1,0,-1,0,
                        0,1,0,-1,
                        0,0,1,0,
                        0,0,0,1,
