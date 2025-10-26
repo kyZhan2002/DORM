@@ -379,7 +379,8 @@ posterior = function(rho,dr,n0){
   
   L = length(rho)
   # Vectorized computation: rho[l] / dr[l,] for all l at once
-  post = sweep(1/dr, 2, rho, "*")  # equivalent to rho / dr but faster
+  # dr is L x n, we want to multiply row l by rho[l]
+  post = sweep(1/dr, 1, rho, "*")  # MARGIN=1 to multiply rows by rho
   post = t(post)  # transpose to get n0 x L
   
   # Normalize rows to sum to 1
@@ -409,18 +410,24 @@ DRcoef_calculation = function(X0,Xlist,Ylist,nlist,post,postlist,drlist,
     po_source = postlist[[l]][1:n, l]
     
     # Vectorized outer product sum: sum_j w_j * r_j * po_j * X_j
-    weighted_res = w * res * X_source
+    # Convert res to vector and use proper vectorization
+    res_vec = as.vector(res)
+    weighted_factor = w * res_vec
+    weighted_res = sweep(X_source, 1, weighted_factor, "*")  # multiply each row of X_source
     Ql2 = colSums(weighted_res) / n
-    secondPmat[l,] = colSums(po_source * weighted_res) / n
+    
+    weighted_factor_po = po_source * w * res_vec
+    secondPmat[l,] = colSums(sweep(X_source, 1, weighted_factor_po, "*")) / n
     
     # Vectorized computation for target data
     X_target = X0[, 1:(q+1)]
     m = X0 %*% betalist[[l]]
     po_target = post[, l]
     
-    weighted_m = m * X_target
+    m_vec = as.vector(m)
+    weighted_m = sweep(X_target, 1, m_vec, "*")
     Ql1 = colSums(weighted_m) / n0
-    firstPmat[l,] = colSums(po_target * weighted_m) / n0
+    firstPmat[l,] = colSums(sweep(X_target, 1, po_target * m_vec, "*")) / n0
     
     Q[,l] = Ql1 + Ql2 
   }
@@ -543,33 +550,33 @@ PQCalculation = function(X0,Xlist,Ylist,X0train,Xtrainlist,Ytrainlist,nlist,post
 }
 
 
-# opt_delta = function(P,Q,Sigma0,s){
+opt_delta = function(P,Q,Sigma0,s){
   
-#   ## This function optimizes quadratic form of delta. (NOT USED IN NEWEST VERSION)
+  ## This function optimizes quadratic form of delta.
   
-#   L = ncol(Q)
-#   opt.weight=rep(NA, L)
-#   v = Variable(L)
+  L = ncol(Q)
+  opt.weight=rep(NA, L)
+  v = Variable(L)
   
-#   Gamma = s*t(Q) %*% Sigma0 %*% Q
+  Gamma = s*t(Q) %*% Sigma0 %*% Q
   
-#   linterm = 2*(1-s)*t(P) %*% Sigma0 %*% Q
+  linterm = 2*(1-s)*t(P) %*% Sigma0 %*% Q
   
-#   # Make Gamma positive definite more efficiently
-#   eig = eigen(Gamma, symmetric = TRUE)
-#   eig$values = pmax(eig$values, 1e-6)
-#   Gamma.positive = eig$vectors %*% diag(eig$values) %*% t(eig$vectors)
+  # Make Gamma positive definite more efficiently
+  eig = eigen(Gamma, symmetric = TRUE)
+  eig$values = pmax(eig$values, 1e-6)
+  Gamma.positive = eig$vectors %*% diag(eig$values) %*% t(eig$vectors)
   
-#   objective = Minimize(quad_form(v,Gamma.positive) + linterm %*% v)
+  objective = Minimize(quad_form(v,Gamma.positive) + linterm %*% v)
   
-#   constraints = list(sum(v)== 1, v>=0 )
-#   prob.weight= Problem(objective, constraints)
-#   result= solve(prob.weight)
-#   opt.status=result$status
-#   opt.sol=result$getValue(v)
-#   opt.weight = ifelse(abs(opt.sol) > 1e-8, opt.sol, 0)
-#   return(opt.weight)
-# }
+  constraints = list(sum(v)== 1, v>=0 )
+  prob.weight= Problem(objective, constraints)
+  result= solve(prob.weight)
+  opt.status=result$status
+  opt.sol=result$getValue(v)
+  opt.weight = ifelse(abs(opt.sol) > 1e-8, opt.sol, 0)
+  return(opt.weight)
+}
 
 opt_s_delta = function(P,Q,Sigma0,smax){
   

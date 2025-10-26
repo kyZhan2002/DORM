@@ -2,13 +2,15 @@ library(Matrix)
 library(MASS)
 
 Generate_Simulation_Data_CondA = function(L, p, q, Nlist, nlist, n0, mixture,
-                                          delta, s, BETA, 
-                                          ptemp = 6, eps_A = 0.25,
-                                          eps_W = 0.1, eps_beta = 0.1, eps_Y = 0.25) {
+                                          delta, s, MU_A, BETA, 
+                                          ptemp = 6, MU_Acoef = 1, eps_A = 1,
+                                          eps_W = 0.1, eps_beta = 0.1, eps_Y = 0.25,
+                                          sd_WA = 1, tarmixA = TRUE) {
   
   ## This function generates simulation data with mixture conditional on A.
   ## Here the BETA should be of size L*(q+1+ptemp)
   ## mixture: a vector of length L specifying the mixture weights for target
+  ## tarmixA: if TRUE, target A uses source-specific means; if FALSE, uses average of MU_A
   
   Xlist = list()
   Xtrainlist = list()
@@ -21,19 +23,24 @@ Generate_Simulation_Data_CondA = function(L, p, q, Nlist, nlist, n0, mixture,
     stop("Error: mixture must be a vector of length L that sums to 1.")
   }
   
+  if (dim(MU_A)[1] != L || dim(MU_A)[2] != q) {
+    stop("Error: MU_A matrix size must be L*q.")
+  }
+  MU_A = MU_Acoef * MU_A
+  
   # Create source-specific WtoA matrices (different W|A models for each source)
   WtoA_list = list()
-  base_WtoA = 0.5 * matrix(c(1, 0, -1, 0,
-                              0, 1, 0, -1,
-                              0, 0, 1, 0,
-                              0, 0, 0, 1,
-                              0, 0, 0, 1,
-                              0, 0, 0, 0), nrow = ptemp, ncol = q, byrow = TRUE)
+  base_WtoA = 1 * matrix(c(1, 0, -1, 0,
+                           0, 1, 0, -1,
+                           0, 0, 1, 0,
+                          -1, 0, 2, 1,
+                           0,2,-1,1,
+                           2,-1,0,-2), nrow = ptemp, ncol = q, byrow = TRUE)
   
   for (l in 1:L) {
     # Add source-specific variation to WtoA
-    WtoA_l = base_WtoA + matrix(rnorm(ptemp * q, mean = 0, sd = 1), nrow = ptemp, ncol = q)
-    zeros = matrix(0, nrow = p - ptemp, ncol = q)
+    WtoA_l = base_WtoA + matrix(rnorm(ptemp * q, mean = 0, sd = sd_WA), nrow = ptemp, ncol = q)
+    zeros = matrix(rnorm((p-ptemp) * q, mean = 0, sd = 0.1), nrow = p - ptemp, ncol = q)
     WtoA_list[[l]] = rbind(WtoA_l, zeros)
   }
   
@@ -48,7 +55,7 @@ Generate_Simulation_Data_CondA = function(L, p, q, Nlist, nlist, n0, mixture,
   for (l in 1:L) {
     n = nlist[l]
     N = Nlist[l]
-    A = mvrnorm(N, mu = rep(0, q), Sigma = eps_A * diag(q))
+    A = mvrnorm(N, mu = MU_A[l,], Sigma = eps_A * diag(q))
     # Use source-specific W|A model
     W = A %*% t(WtoA_list[[l]]) + mvrnorm(N, mu = rep(0, p), Sigma = eps_W * diag(p))
     X = cbind(1, A, W)
@@ -64,7 +71,7 @@ Generate_Simulation_Data_CondA = function(L, p, q, Nlist, nlist, n0, mixture,
   for (l in 1:L) {
     n = nlist[l]
     N = Nlist[l]
-    A = mvrnorm(N, mu = rep(0, q), Sigma = eps_A * diag(q))
+    A = mvrnorm(N, mu = MU_A[l,], Sigma = eps_A * diag(q))
     W = A %*% t(WtoA_list[[l]]) + mvrnorm(N, mu = rep(0, p), Sigma = eps_W * diag(p))
     X = cbind(1, A, W)
     
@@ -76,11 +83,25 @@ Generate_Simulation_Data_CondA = function(L, p, q, Nlist, nlist, n0, mixture,
   }
   
   # Generate target data
-  A = mvrnorm(n0, mu = rep(0, q), Sigma = eps_A * diag(q))
-  
   # Assign each observation to a source based on mixture weights
   # This assignment determines which W|A model to use
   S = sample(1:L, n0, replace = TRUE, prob = mixture)
+  
+  # Generate A using source-specific means or average based on tarmixA
+  A = matrix(NA, nrow = n0, ncol = q)
+  if (tarmixA) {
+    # Use source-specific means based on assignment S
+    for (l in 1:L) {
+      idx = which(S == l)
+      if (length(idx) > 0) {
+        A[idx,] = mvrnorm(length(idx), mu = MU_A[l,], Sigma = eps_A * diag(q))
+      }
+    }
+  } else {
+    # Use average of all source means
+    MU_A_avg = colMeans(MU_A)
+    A = mvrnorm(n0, mu = MU_A_avg, Sigma = eps_A * diag(q))
+  }
   
   # Generate W using source-specific W|A models
   W = matrix(0, nrow = n0, ncol = p)
@@ -110,8 +131,22 @@ Generate_Simulation_Data_CondA = function(L, p, q, Nlist, nlist, n0, mixture,
   Surrogate = 0.6 * Y0 + 0.05 * rowSums(X0[, 1:(q + 1)] * BETA[S, 1:(q + 1)]) + eps_S * rnorm(n0)
   
   # Generate training target data
-  A_train = mvrnorm(n0, mu = rep(0, q), Sigma = eps_A * diag(q))
   S_train = sample(1:L, n0, replace = TRUE, prob = mixture)
+  
+  A_train = matrix(NA, nrow = n0, ncol = q)
+  if (tarmixA) {
+    # Use source-specific means based on assignment S_train
+    for (l in 1:L) {
+      idx = which(S_train == l)
+      if (length(idx) > 0) {
+        A_train[idx,] = mvrnorm(length(idx), mu = MU_A[l,], Sigma = eps_A * diag(q))
+      }
+    }
+  } else {
+    # Use average of all source means
+    MU_A_avg = colMeans(MU_A)
+    A_train = mvrnorm(n0, mu = MU_A_avg, Sigma = eps_A * diag(q))
+  }
   
   W_train = matrix(0, nrow = n0, ncol = p)
   for (l in 1:L) {
@@ -134,18 +169,25 @@ Generate_Simulation_Data_CondA = function(L, p, q, Nlist, nlist, n0, mixture,
 }
 
 Generate_test_data_CondA = function(L, p, q, n0, mixture,
-                                    delta, s, BETA, WtoA_list,
-                                    ptemp = 6, eps_A = 0.25,
-                                    eps_W = 0.01, eps_beta = 0.1, eps_Y = 0.25) {
+                                    delta, s, MU_A, BETA, WtoA_list,
+                                    ptemp = 6, MU_Acoef = 1, eps_A = 0.25,
+                                    eps_W = 0.01, eps_beta = 0.1, eps_Y = 0.25,
+                                    tarmixA = TRUE) {
   
   ## This function generates test X and Y with mixture conditional on A.
   ## WtoA_list: list of source-specific WtoA matrices (from training data generation)
+  ## tarmixA: if TRUE, target A uses source-specific means; if FALSE, uses average of MU_A
   
   eps_S = 0.25
   
   if (length(mixture) != L || abs(sum(mixture) - 1) > 1e-6) {
     stop("Error: mixture must be a vector of length L that sums to 1.")
   }
+  
+  if (dim(MU_A)[1] != L || dim(MU_A)[2] != q) {
+    stop("Error: MU_A matrix size must be L*q.")
+  }
+  MU_A = MU_Acoef * MU_A
   
   if (is.null(WtoA_list)) {
     # If WtoA_list not provided, create default ones
@@ -171,8 +213,23 @@ Generate_test_data_CondA = function(L, p, q, n0, mixture,
   BETA = cbind(BETA, zeros)
   
   # Generate test data
-  A = mvrnorm(n0, mu = rep(0, q), Sigma = eps_A * diag(q))
   S = sample(1:L, n0, replace = TRUE, prob = mixture)
+  
+  # Generate A using source-specific means or average based on tarmixA
+  A = matrix(NA, nrow = n0, ncol = q)
+  if (tarmixA) {
+    # Use source-specific means based on assignment S
+    for (l in 1:L) {
+      idx = which(S == l)
+      if (length(idx) > 0) {
+        A[idx,] = mvrnorm(length(idx), mu = MU_A[l,], Sigma = eps_A * diag(q))
+      }
+    }
+  } else {
+    # Use average of all source means
+    MU_A_avg = colMeans(MU_A)
+    A = mvrnorm(n0, mu = MU_A_avg, Sigma = eps_A * diag(q))
+  }
   
   # Generate W using source-specific W|A models
   W = matrix(0, nrow = n0, ncol = p)

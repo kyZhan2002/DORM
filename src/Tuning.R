@@ -1,6 +1,8 @@
 library(Matrix)
 library(MASS)
-source("/n/data1/hsph/biostat/celehs/lab/kez641/REMIX/SourceCode/Functions3.R")
+library(here)
+
+source(here('src', 'Functions3.R'))
 
 tuning_Y = function(Xtest,Ytest,q,beta_array,smax_array = seq(0.1,1,0.1)){
   
