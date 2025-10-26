@@ -1,34 +1,26 @@
 ## Simulation script for Conditional A DORM method with L=5
 
 ## Activate renv to use project library
-# First, we need to find the project root where renv is located
-# The here package should find the project root automatically
-if(require("here", quietly = TRUE)) {
-  renv_activate_path <- here::here("renv", "activate.R")
-  if(file.exists(renv_activate_path)) {
-    source(renv_activate_path)
-    cat("renv activated from:", renv_activate_path, "\n")
-  } else {
-    cat("Warning: renv/activate.R not found at", renv_activate_path, "\n")
-  }
-} else {
-  # Fallback: try to find renv by going up directories
-  current_dir <- getwd()
-  while(current_dir != dirname(current_dir)) {  # Stop at root
-    renv_path <- file.path(current_dir, "renv", "activate.R")
-    if(file.exists(renv_path)) {
-      source(renv_path)
-      cat("renv activated from:", renv_path, "\n")
-      break
-    }
-    current_dir <- dirname(current_dir)
-  }
-  if(!exists("renv")) {
-    cat("Warning: Could not find or activate renv\n")
-  }
+# Note: Run setup_cluster.R once before submitting jobs to restore packages
+cat("=== Initializing environment ===\n")
+
+# Ensure here package is available
+if (!requireNamespace("here", quietly = TRUE)) {
+  stop("Package 'here' is required. Please run setup_cluster.R first.")
 }
 
 library(here)
+
+# Activate renv
+renv_activate_path <- here("renv", "activate.R")
+if(file.exists(renv_activate_path)) {
+  source(renv_activate_path)
+  cat("renv activated from:", renv_activate_path, "\n")
+} else {
+  stop("Error: renv/activate.R not found. Please ensure you're in the project root.")
+}
+
+# Load required packages and source files
 source(here('src', 'DataGen_CondA.R'))
 source(here('src', 'Functions3.R'))
 source(here('src', 'Tuning.R'))
