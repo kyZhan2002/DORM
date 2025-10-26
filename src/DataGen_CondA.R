@@ -170,9 +170,9 @@ Generate_Simulation_Data_CondA = function(L, p, q, Nlist, nlist, n0, mixture,
 
 Generate_test_data_CondA = function(L, p, q, n0, mixture,
                                     delta, s, MU_A, BETA, WtoA_list,
-                                    ptemp = 6, MU_Acoef = 1, eps_A = 0.25,
-                                    eps_W = 0.01, eps_beta = 0.1, eps_Y = 0.25,
-                                    tarmixA = TRUE) {
+                                    ptemp = 6, MU_Acoef = 1, eps_A = 1,
+                                    eps_W = 0.1, eps_beta = 0.1, eps_Y = 0.25,
+                                    sd_WA = 1, tarmixA = TRUE) {
   
   ## This function generates test X and Y with mixture conditional on A.
   ## WtoA_list: list of source-specific WtoA matrices (from training data generation)
@@ -192,15 +192,15 @@ Generate_test_data_CondA = function(L, p, q, n0, mixture,
   if (is.null(WtoA_list)) {
     # If WtoA_list not provided, create default ones
     WtoA_list = list()
-    base_WtoA = 0.5 * matrix(c(1, 0, -1, 0,
-                                0, 1, 0, -1,
-                                0, 0, 1, 0,
-                                0, 0, 0, 1,
-                                0, 0, 0, 1,
-                                0, 0, 0, 0), nrow = ptemp, ncol = q, byrow = TRUE)
+    base_WtoA = 1 * matrix(c(1, 0, -1, 0,
+                             0, 1, 0, -1,
+                             0, 0, 1, 0,
+                            -1, 0, 2, 1,
+                             0,2,-1,1,
+                             2,-1,0,-2), nrow = ptemp, ncol = q, byrow = TRUE)
     for (l in 1:L) {
-      WtoA_l = base_WtoA + matrix(rnorm(ptemp * q, mean = 0, sd = 0.1), nrow = ptemp, ncol = q)
-      zeros = matrix(0, nrow = p - ptemp, ncol = q)
+      WtoA_l = base_WtoA + matrix(rnorm(ptemp * q, mean = 0, sd = sd_WA), nrow = ptemp, ncol = q)
+      zeros = matrix(rnorm((p-ptemp) * q, mean = 0, sd = 0.1), nrow = p - ptemp, ncol = q)
       WtoA_list[[l]] = rbind(WtoA_l, zeros)
     }
   }
