@@ -1,5 +1,15 @@
 ## Simulation script for Conditional A DORM method with L=5
 
+## Check and install required packages
+required_packages <- c("CVXR", "here")
+for(pkg in required_packages){
+  if(!require(pkg, character.only = TRUE, quietly = TRUE)){
+    cat("Installing package:", pkg, "\n")
+    install.packages(pkg, repos = "https://cloud.r-project.org/")
+    library(pkg, character.only = TRUE)
+  }
+}
+
 library(here)
 source(here('src', 'DataGen_CondA.R'))
 source(here('src', 'Functions3.R'))
