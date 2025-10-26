@@ -1,12 +1,30 @@
 ## Simulation script for Conditional A DORM method with L=5
 
-## Check and install required packages
-required_packages <- c("CVXR", "here")
-for(pkg in required_packages){
-  if(!require(pkg, character.only = TRUE, quietly = TRUE)){
-    cat("Installing package:", pkg, "\n")
-    install.packages(pkg, repos = "https://cloud.r-project.org/")
-    library(pkg, character.only = TRUE)
+## Activate renv to use project library
+# First, we need to find the project root where renv is located
+# The here package should find the project root automatically
+if(require("here", quietly = TRUE)) {
+  renv_activate_path <- here::here("renv", "activate.R")
+  if(file.exists(renv_activate_path)) {
+    source(renv_activate_path)
+    cat("renv activated from:", renv_activate_path, "\n")
+  } else {
+    cat("Warning: renv/activate.R not found at", renv_activate_path, "\n")
+  }
+} else {
+  # Fallback: try to find renv by going up directories
+  current_dir <- getwd()
+  while(current_dir != dirname(current_dir)) {  # Stop at root
+    renv_path <- file.path(current_dir, "renv", "activate.R")
+    if(file.exists(renv_path)) {
+      source(renv_path)
+      cat("renv activated from:", renv_path, "\n")
+      break
+    }
+    current_dir <- dirname(current_dir)
+  }
+  if(!exists("renv")) {
+    cat("Warning: Could not find or activate renv\n")
   }
 }
 

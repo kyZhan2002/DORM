@@ -41,3 +41,5 @@ results/
 *.out
 output/
 data/output/
+.Rproj.user
+.Rhistory
