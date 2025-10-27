@@ -1,43 +1,55 @@
 ## Simulation script for Conditional A DORM method with L=5
 
-## Activate renv to use project library
-# Note: Run setup_cluster.R once before submitting jobs to restore packages
 cat("=== Initializing environment ===\n")
 
-# Ensure here package is available
-if (!requireNamespace("here", quietly = TRUE)) {
-  stop("Package 'here' is required. Please run setup_cluster.R first.")
-}
-
-library(here)
-
-# Activate renv
-renv_activate_path <- here("renv", "activate.R")
-if(file.exists(renv_activate_path)) {
-  source(renv_activate_path)
-  cat("renv activated from:", renv_activate_path, "\n")
+# Try to use here package, but provide fallback
+if (requireNamespace("here", quietly = TRUE)) {
+  library(here)
+  use_here <- TRUE
+  cat("Using 'here' package for paths\n")
 } else {
-  stop("Error: renv/activate.R not found. Please ensure you're in the project root.")
+  use_here <- FALSE
+  here <- function(...) file.path(getwd(), ...)
+  cat("'here' package not available, using getwd() as fallback\n")
 }
 
-# Load required packages and source files
-source(here('src', 'DataGen_CondA.R'))
-source(here('src', 'Functions3.R'))
-source(here('src', 'Tuning.R'))
+# Try to activate renv (optional for local runs)
+# renv_activate_path <- here("renv", "activate.R")
+# if(file.exists(renv_activate_path)) {
+#   tryCatch({
+#     source(renv_activate_path)
+#     cat("renv activated from:", renv_activate_path, "\n")
+#   }, error = function(e) {
+#     cat("Warning: Could not activate renv, proceeding with system libraries\n")
+#   })
+# } else {
+#   cat("renv not found, using system libraries\n")
+# }
+
+# Load required packages and source files with error handling
+tryCatch({
+  source(here('src', 'DataGen_CondA.R'))
+  source(here('src', 'Functions3.R'))
+  source(here('src', 'Tuning.R'))
+  cat("Successfully loaded source files\n")
+}, error = function(e) {
+  stop("Error loading source files: ", e$message, 
+       "\nPlease ensure you're running from the project root directory.")
+})
 
 ## Helper function to generate uniform random point on simplex
-simplex_uniform = function(L) {
-  # Generate L-1 uniform random variables, sort them, and compute differences
-  u = sort(c(0, runif(L - 1), 1))
-  delta = diff(u)
-  return(delta)
+simplex_uniform = function(dim){
+  ## This function samples a dim vector from dim-simplex uniform distribution.
+  vec = rexp(dim,rate = 1)
+  vec = vec / sum(vec)
+  return(vec)
 }
 
 ## Get seed from command line argument
 args = commandArgs(trailingOnly = TRUE)
 if(length(args) == 0){
-  seed = 123  # default seed for testing
-  cat("No seed provided, using default seed = 123\n")
+  seed = 1  # default seed for testing
+  cat("No seed provided, using default seed =",seed,"\n")
 } else {
   seed = as.integer(args[1])
   cat("Using seed =", seed, "\n")
@@ -49,17 +61,17 @@ set.seed(seed)
 
 L = 5     # number of source sites
 q = 4     # dim of low-d A
-p = 95    # rest dim of covariate X. Total dim of X is (1+q+p)
+p = 195    # rest dim of covariate X. Total dim of X is (1+q+p)
 ptemp = 6
 
 # Sample sizes
 Nlist = rep(1000, L)
 nlist = rep(500, L)
-n0 = 500
+n0 = 1000
 
 # Mixture parameters
 mixture = c(0.5, 0, 0.5, 0, 0)  # Target mixture weights
-delta = c(0, 0, 1, 0, 0)    # Perturbation mixture
+delta = c(0, 0, 0, 0, 1)    # Perturbation mixture
 
 # Mean of A for each source
 MU_A = 0.5 * matrix(c(-2, 0, 1, 0,
@@ -79,9 +91,9 @@ BETA = 1 * matrix(c( 0, 4, 4, 3, -3,  0.5, -0.2, 0, 0, 1, 0,
 # Simulation parameters
 smax_array = seq(0.05, 0.5, 0.05)
 nsmax = length(smax_array)
-trues_array = seq(0, 1, 0.05)
+trues_array = seq(0, 0.5, 0.05)
 ntrues = length(trues_array)
-delta_num = 100  # Number of random deltas to average over
+delta_num = 50  # Number of random deltas to average over
 
 ## Step 1: Generate training data and fit DORM models for each smax
 
@@ -93,11 +105,13 @@ dat = Generate_Simulation_Data_CondA(L, p, q, Nlist, nlist, n0, mixture,
                                       sd_WA = 1, tarmixA = FALSE)
 
 cat("=== Fitting DORM models for different smax values ===\n")
+cat(sprintf("Total smax values to fit: %d\n", nsmax))
 result_list = list()
 
 for(i in 1:nsmax){
   smax = smax_array[i]
-  cat(sprintf("Fitting smax = %.2f (%d/%d)\n", smax, i, nsmax))
+  cat(sprintf("[%s] Fitting smax = %.2f (%d/%d)\n", 
+              format(Sys.time(), "%H:%M:%S"), smax, i, nsmax))
   
   result = get_DORM_beta(dat$Xlist, dat$Xtrainlist, 
                          dat$Ylist, dat$Ytrainlist,
@@ -112,6 +126,8 @@ for(i in 1:nsmax){
 ## Step 2: Evaluate on test data with varying trues and delta
 
 cat("\n=== Evaluating on test data ===\n")
+cat(sprintf("Total evaluations: %d smax × %d trues × %d deltas = %d iterations\n",
+            nsmax, ntrues, delta_num, nsmax * ntrues * delta_num))
 
 final_worst = data.frame(matrix(ncol = 2 + 6 + (L + 1) + L, nrow = 0))
 final_ave = data.frame(matrix(ncol = 2 + 6 + (L + 1) + L, nrow = 0))
@@ -121,17 +137,30 @@ colnames(final_worst) <- c("smax", "true-s", "Ours", "SS", "SA", "RA", "MI", "PA
 colnames(final_ave) <- c("smax", "true-s", "Ours", "SS", "SA", "RA", "MI", "PA",
                          paste0("d", 1:L), "s", paste0("SS", 1:L))
 
+total_iterations <- 0
+start_time <- Sys.time()
+
 for(i in 1:nsmax){
   smax = smax_array[i]
   result = result_list[[as.character(smax)]]
   
-  cat(sprintf("\nEvaluating smax = %.2f (%d/%d)\n", smax, i, nsmax))
+  cat(sprintf("\n[%s] Evaluating smax = %.2f (%d/%d)\n", 
+              format(Sys.time(), "%H:%M:%S"), smax, i, nsmax))
   
   for(j in 1:ntrues){
     trues = trues_array[j]
     
-    if(j %% 5 == 1) {
-      cat(sprintf("  trues = %.2f (%d/%d)\n", trues, j, ntrues))
+    if(j %% 5 == 1 || j == 1) {
+      elapsed <- as.numeric(difftime(Sys.time(), start_time, units = "secs"))
+      if(total_iterations > 0) {
+        avg_per_iter <- elapsed / total_iterations
+        remaining_iters <- (nsmax - i + 1) * ntrues - j + 1
+        est_remaining <- remaining_iters * avg_per_iter
+        cat(sprintf("  trues = %.2f (%d/%d) | Elapsed: %.1fs | Est. remaining: %.1fs\n", 
+                    trues, j, ntrues, elapsed, est_remaining))
+      } else {
+        cat(sprintf("  trues = %.2f (%d/%d)\n", trues, j, ntrues))
+      }
     }
     
     resvec_worst = rep(0, 6)
@@ -145,7 +174,7 @@ for(i in 1:nsmax){
       if(k == 1){
         delta_test = rep(1/L, L)  # Start with uniform
       }else{
-        delta_test = simplex_uniform(L)
+        delta_test = simplex_uniform(dim = L)
       }
       
       # Generate test data
@@ -172,6 +201,8 @@ for(i in 1:nsmax){
       # Accumulate for average
       resvec_ave = resvec_ave + resvec
       single_ave = single_ave + single
+      
+      total_iterations <- total_iterations + 1
     }
     
     # Compute averages
@@ -198,6 +229,7 @@ colnames(final_ave) <- c("smax", "true-s", "Ours", "SS", "SA", "RA", "MI", "PA",
 output_dir = here('simu', 'simu_10242025', 'data')
 if(!dir.exists(output_dir)){
   dir.create(output_dir, recursive = TRUE)
+  cat("Created output directory:", output_dir, "\n")
 }
 
 output_file_worst = file.path(output_dir, paste0("CondA_L5_worst_seed", seed, ".rds"))
@@ -226,6 +258,8 @@ cat("Average case:", output_file_ave, "\n")
 ## Step 4: Print summary statistics
 
 cat("\n=== Summary Statistics ===\n")
+cat(sprintf("Total computation time: %.2f minutes\n", 
+            as.numeric(difftime(Sys.time(), start_time, units = "mins"))))
 cat("Worst case performance:\n")
 print(summary(final_worst[, c("Ours", "SS", "SA", "RA", "MI", "PA")]))
 

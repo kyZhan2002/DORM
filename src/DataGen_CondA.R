@@ -49,7 +49,7 @@ Generate_Simulation_Data_CondA = function(L, p, q, Nlist, nlist, n0, mixture,
   }
   
   zeros = matrix(rnorm(L * (p - ptemp), mean = 0, sd = eps_beta), nrow = L)
-  BETA = cbind(BETA, zeros)
+  BETA_full = cbind(BETA, zeros)
   
   # Generate source data
   for (l in 1:L) {
@@ -60,7 +60,7 @@ Generate_Simulation_Data_CondA = function(L, p, q, Nlist, nlist, n0, mixture,
     W = A %*% t(WtoA_list[[l]]) + mvrnorm(N, mu = rep(0, p), Sigma = eps_W * diag(p))
     X = cbind(1, A, W)
     
-    beta = BETA[l,]
+    beta = BETA_full[l,]
     Y = X[1:n,] %*% beta + eps_Y * rnorm(n)
     
     Xlist[[l]] = X
@@ -75,7 +75,7 @@ Generate_Simulation_Data_CondA = function(L, p, q, Nlist, nlist, n0, mixture,
     W = A %*% t(WtoA_list[[l]]) + mvrnorm(N, mu = rep(0, p), Sigma = eps_W * diag(p))
     X = cbind(1, A, W)
     
-    beta = BETA[l,]
+    beta = BETA_full[l,]
     Y = X[1:n,] %*% beta + eps_Y * rnorm(n)
     
     Xtrainlist[[l]] = X
@@ -121,14 +121,14 @@ Generate_Simulation_Data_CondA = function(L, p, q, Nlist, nlist, n0, mixture,
   Assigns_Y0 = S  # Start with same assignment as W
   
   # For indi == 0, Y follows the same source as W
-  Y0[indi == 0] = rowSums(X0[indi == 0,] * BETA[S[indi == 0],]) + eps_Y * rnorm(sum(indi == 0))
+  Y0[indi == 0] = rowSums(X0[indi == 0,] * BETA_full[S[indi == 0],]) + eps_Y * rnorm(sum(indi == 0))
   
   # For indi == 1, Y has perturbation: use different source assignment
   SS = sample(1:L, sum(indi), replace = TRUE, prob = delta)
-  Y0[indi == 1] = rowSums(X0[indi == 1,] * BETA[SS,]) + eps_Y * rnorm(sum(indi))
+  Y0[indi == 1] = rowSums(X0[indi == 1,] * BETA_full[SS,]) + eps_Y * rnorm(sum(indi))
   Assigns_Y0[indi == 1] = SS
   
-  Surrogate = 0.6 * Y0 + 0.05 * rowSums(X0[, 1:(q + 1)] * BETA[S, 1:(q + 1)]) + eps_S * rnorm(n0)
+  Surrogate = 0.6 * Y0 + 0.05 * rowSums(X0[, 1:(q + 1)] * BETA_full[S, 1:(q + 1)]) + eps_S * rnorm(n0)
   
   # Generate training target data
   S_train = sample(1:L, n0, replace = TRUE, prob = mixture)
@@ -189,28 +189,17 @@ Generate_test_data_CondA = function(L, p, q, n0, mixture,
   }
   MU_A = MU_Acoef * MU_A
   
-  if (is.null(WtoA_list)) {
-    # If WtoA_list not provided, create default ones
-    WtoA_list = list()
-    base_WtoA = 1 * matrix(c(1, 0, -1, 0,
-                             0, 1, 0, -1,
-                             0, 0, 1, 0,
-                            -1, 0, 2, 1,
-                             0,2,-1,1,
-                             2,-1,0,-2), nrow = ptemp, ncol = q, byrow = TRUE)
-    for (l in 1:L) {
-      WtoA_l = base_WtoA + matrix(rnorm(ptemp * q, mean = 0, sd = sd_WA), nrow = ptemp, ncol = q)
-      zeros = matrix(rnorm((p-ptemp) * q, mean = 0, sd = 0.1), nrow = p - ptemp, ncol = q)
-      WtoA_list[[l]] = rbind(WtoA_l, zeros)
-    }
+  if (is.null(WtoA_list) || length(WtoA_list) != L) {
+    stop("Error: WtoA_list must be provided and have length L.")
   }
   
   if (dim(BETA)[1] != L || dim(BETA)[2] != q + 1 + ptemp) {
     stop("Error: BETA matrix size must be L*(q+1+ptemp).")
   }
   
+  # Pad BETA to full dimension
   zeros = matrix(rnorm(L * (p - ptemp), mean = 0, sd = eps_beta), nrow = L)
-  BETA = cbind(BETA, zeros)
+  BETA_full = cbind(BETA, zeros)
   
   # Generate test data
   S = sample(1:L, n0, replace = TRUE, prob = mixture)
@@ -246,12 +235,12 @@ Generate_test_data_CondA = function(L, p, q, n0, mixture,
   indi = sample(c(0, 1), n0, replace = TRUE, prob = c(1 - s, s))
   
   Y0 = rep(0, n0)
-  Y0[indi == 0] = rowSums(X0[indi == 0,] * BETA[S[indi == 0],]) + eps_Y * rnorm(sum(indi == 0))
+  Y0[indi == 0] = rowSums(X0[indi == 0,] * BETA_full[S[indi == 0],]) + eps_Y * rnorm(sum(indi == 0))
   
   SS = sample(1:L, sum(indi), replace = TRUE, prob = delta)
-  Y0[indi == 1] = rowSums(X0[indi == 1,] * BETA[SS,]) + eps_Y * rnorm(sum(indi))
+  Y0[indi == 1] = rowSums(X0[indi == 1,] * BETA_full[SS,]) + eps_Y * rnorm(sum(indi))
   
-  Surrogate = 0.6 * Y0 + 0.05 * rowSums(X0[, 1:(q + 1)] * BETA[S, 1:(q + 1)]) + eps_S * rnorm(n0)
+  Surrogate = 0.6 * Y0 + 0.05 * rowSums(X0[, 1:(q + 1)] * BETA_full[S, 1:(q + 1)]) + eps_S * rnorm(n0)
   
   out = list('X0' = X0, 'Y0' = Y0, 'S0' = Surrogate, 'Assigns' = S, 'BETA' = BETA)
   

@@ -43,3 +43,6 @@ output/
 data/output/
 .Rproj.user
 .Rhistory
+.rds
+.RData
+simu/simu_10242025/data
