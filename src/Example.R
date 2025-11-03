@@ -98,6 +98,7 @@ rowMeans(1/dra)
 # Ideally, the 1st and 3rd element should be close to 1, because they have big overlap with target.
 # The rest of mean density ratios may be farther from 1 due to less overlap.
 
+get_err(Data$X0,Data$Y0,result$beta_star,q,nn=500)
 
 ## Implement parameter tuning. We need to put all beta(smax) in a matrix.
 smax_array = seq(0.1,0.5,0.1)     # smax array to be tuned over.
@@ -199,42 +200,38 @@ beta_MI = Q %*% dt_MI
 
 ## Generate data with mixture conditional on A
 source(here('src', 'DataGen_CondA.R'))
-
-L = 5
-q = 4
-p = 95
+L = 5     # number of source sites
+q = 4     # dim of low-d A
+p = 95    # rest dim of covariate X. Total dim of X is (1+q+p)
 ptemp = 6
 
-Nlist = rep(1000, 5)
-nlist = rep(500, 5)
-n0 = 1000
+# Sample sizes
+Nlist = rep(1000, L)
+nlist = rep(500, L)
+n0 = 500
 
+# Mixture parameters
 mixture = c(0.5, 0, 0.5, 0, 0)  # Target mixture weights
-s = 0.1                          # Perturbation probability
-delta = c(0, 0.5, 0, 0.5, 0)    # Perturbation mixture
+delta = c(0, 0, 0, 0, 1)    # Perturbation mixture
 
-MU_A = 0.5 * matrix(c(1,1,-1,2,
-                    1,1,-1,2,
-                    1,1,-1,2,
-                    1,1,-1,2,
-                    1,1,-1,2),nrow=L,ncol=q,byrow=TRUE) # Each row is the mean of A_l
+# Mean of A for each source
+MU_A = 0.5 * matrix(c(-2, 0, 1, 0,
+                      0, -1, 2, 1,
+                      -1, 2, 0, 1,
+                      1, 1, -1, 2,
+                      2, 1, 1, 2), nrow = L, ncol = q, byrow = TRUE)
 
-MU_A = 0.5 * matrix(c(-2,0,1,0,
-                      0,-1,2,1,
-                      -1,2,0,1,
-                      1,1,-1,2,
-                      2,1,1,2),nrow=L,ncol=q,byrow=TRUE) # Each row is the mean of A_l
-
-# True setting of BETA. Y = X %*% BETA + eps.
-BETA =     1  *  matrix(c(0,4,4,3,-3,  0.5,-0.2,0,0,1,0,
-                          -3,3,-1,3,-3, 0,0.5,-0.2,0,0,1,
-                          -3,-3,0,-3,-3,  0,0,0.2,-0.5,0,1,
-                          -6,6,6,6,-6,  1,0,0,0.2,-0.5,0,
-                          -3,3,0,0,1, 0,0,0,1,0.2,-0.5),nrow=L,ncol=ptemp+q+1,byrow=TRUE)
+# True BETA coefficients
+BETA = 1 * matrix(c( 0, 4, 4, 3, -3,  0.5, -0.2, 0, 0, 1, 0,
+                     -3, 3, -1, 3, -3,  0, 0.5, -0.2, 0, 0, 1,
+                     -3, -3, 0, -3, -3,  0, 0, 0.2, -0.5, 0, 1,
+                     -6, 6, 6, 6, -6,   1, 0, 0, 0.2, -0.5, 0,
+                     -3, 3, 0, 0, 1,    0, 0, 0, 1, 0.2, -0.5),
+                  nrow = L, ncol = ptemp + q + 1, byrow = TRUE)
 
 # Generate data conditional on A
 Data_condA = Generate_Simulation_Data_CondA(L, p, q, Nlist, nlist, n0, mixture,
-                                             delta, s, MU_A, BETA, ptemp, tarmixA = FALSE)
+                                             delta, s = 0.1, MU_A, BETA, ptemp, tarmixA = FALSE)
 
 # Run DORM with condA=TRUE to use conditional density ratio
 smax = 0.1
@@ -242,23 +239,25 @@ result_condA = get_DORM_beta(Data_condA$Xlist, Data_condA$Xtrainlist,
                              Data_condA$Ylist, Data_condA$Ytrainlist,
                              Data_condA$X0, Data_condA$X0train, nlist, q, smax,
                              penalty = FALSE, alpha = 0.5, rho_pseudo = 'NA', 
-                             dr_type = "logit", normalize = FALSE, condA = TRUE)
+                             dr_type = "rf", normalize = FALSE, condA = TRUE)
 
 cat("\n=== CondA Model Results ===\n")
 cat("Estimated rho:", result_condA$rho, "\n")
-cat("Beta_DORM (first 5 coefs):", result_condA$beta_star[1:5], "\n")
+cat("Beta_DORM (first 5 coefs):", result_condA$beta_star, "\n")
+
+
+get_err(Data_condA$X0,Data_condA$Y0,result_condA$beta_star,q=4,nn=500)
 
 # Compare with standard model (condA=FALSE)
 result_standard = get_DORM_beta(Data_condA$Xlist, Data_condA$Xtrainlist, 
                                 Data_condA$Ylist, Data_condA$Ytrainlist,
                                 Data_condA$X0, Data_condA$X0train, nlist, q, smax,
                                 penalty = FALSE, alpha = 0.5, rho_pseudo = 'NA', 
-                                dr_type = "logit", normalize = FALSE, condA = FALSE)
+                                dr_type = "rf", normalize = FALSE, condA = FALSE)
 
 cat("\n=== Standard Model Results ===\n")
 cat("Estimated rho:", result_standard$rho, "\n")
 cat("Beta_DORM (first 5 coefs):", result_standard$beta_star[1:5], "\n")
-
 
 
 

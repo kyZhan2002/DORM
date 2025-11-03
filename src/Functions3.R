@@ -236,14 +236,15 @@ dratio_ML = function(modellist,X0,L,Nlist,n0,bound = 1e6,normalize = FALSE, cond
     }
   }
   
-  # If condA = TRUE, compute conditional density ratio
+  # If condA = TRUE, compute conditional density ratio AND return both
   if(condA){
     if(is.null(modellist_A)){
       stop("modellist_A must be provided when condA = TRUE")
     }
     
     dr_A = matrix(0,nrow=L,ncol=nrow(X0))
-    q_A = ncol(X0) - ncol(modellist_A[[1]]$trainingData) + 1  # Infer q from model
+    q_A = ncol(modellist_A[[1]]$trainingData)  # Infer q from model
+    print(q_A)
     X0_A = X0[, 1:q_A]
     
     for(l in 1:L){
@@ -255,14 +256,17 @@ dratio_ML = function(modellist,X0,L,Nlist,n0,bound = 1e6,normalize = FALSE, cond
     }
     
     # Conditional density ratio: dr(X) / dr(A)
-    dr = dr / dr_A
+    dr_cond = dr / dr_A
     
     if(normalize){
       for(l in 1:L){
-        nor_const = mean(1/dr[l,])
-        dr[l,] = nor_const * dr[l,]
+        nor_const = mean(1/dr_cond[l,])
+        dr_cond[l,] = nor_const * dr_cond[l,]
       }
     }
+    
+    # Return both unconditional and conditional
+    return(list(dr_uncond = dr, dr_cond = dr_cond))
   }
   
   return(dr)
@@ -291,7 +295,7 @@ dratio_logit = function(modellist,X0,L,Nlist,n0,bound=1e6,normalize = FALSE, con
     }
   }
   
-  # If condA = TRUE, compute conditional density ratio
+  # If condA = TRUE, compute conditional density ratio AND return both
   if(condA){
     if(is.null(modellist_A)){
       stop("modellist_A must be provided when condA = TRUE")
@@ -312,14 +316,17 @@ dratio_logit = function(modellist,X0,L,Nlist,n0,bound=1e6,normalize = FALSE, con
     }
     
     # Conditional density ratio: dr(X) / dr(A)
-    dr = dr / dr_A
+    dr_cond = dr / dr_A
     
     if(normalize){
       for(l in 1:L){
-        nor_const = mean(1/dr[l,])
-        dr[l,] = nor_const * dr[l,]
+        nor_const = mean(1/dr_cond[l,])
+        dr_cond[l,] = nor_const * dr_cond[l,]
       }
     }
+    
+    # Return both unconditional and conditional
+    return(list(dr_uncond = dr, dr_cond = dr_cond))
   }
   
   return(dr)
@@ -647,17 +654,28 @@ maximin_s_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,s
     if(condA){
       modellist = models$modellist
       modellist_A = models$modellist_A
-      dr = dratio_logit(modellist,X0,L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize, condA = condA, modellist_A = modellist_A, q = q)
-      drlist = list()
+      # Compute BOTH unconditional and conditional density ratios in one call
+      dr_result = dratio_logit(modellist,X0,L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize, condA = TRUE, modellist_A = modellist_A, q = q)
+      dr_uncond = dr_result$dr_uncond
+      dr_cond = dr_result$dr_cond
+      
+      drlist_uncond = list()
+      drlist_cond = list()
       for(l in 1:L){
-        drlist[[l]] = dratio_logit(modellist,Xlist[[l]],L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize, condA = condA, modellist_A = modellist_A, q = q)
+        dr_result_l = dratio_logit(modellist,Xlist[[l]],L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize, condA = TRUE, modellist_A = modellist_A, q = q)
+        drlist_uncond[[l]] = dr_result_l$dr_uncond
+        drlist_cond[[l]] = dr_result_l$dr_cond
       }
     }else{
       modellist = models
-      dr = dratio_logit(modellist,X0,L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize)
-      drlist = list()
+      dr_uncond = dratio_logit(modellist,X0,L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize)
+      dr_cond = dr_uncond  # Same as unconditional when condA = FALSE
+      
+      drlist_uncond = list()
+      drlist_cond = list()
       for(l in 1:L){
-        drlist[[l]] = dratio_logit(modellist,Xlist[[l]],L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize)
+        drlist_uncond[[l]] = dratio_logit(modellist,Xlist[[l]],L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize)
+        drlist_cond[[l]] = drlist_uncond[[l]]
       }
     }
   }else{
@@ -665,17 +683,28 @@ maximin_s_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,s
     if(condA){
       modellist = models$modellist
       modellist_A = models$modellist_A
-      dr = dratio_ML(modellist,X0,L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize, condA = condA, modellist_A = modellist_A)
-      drlist = list()
+      # Compute BOTH unconditional and conditional density ratios in one call
+      dr_result = dratio_ML(modellist,X0,L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize, condA = TRUE, modellist_A = modellist_A)
+      dr_uncond = dr_result$dr_uncond
+      dr_cond = dr_result$dr_cond
+      
+      drlist_uncond = list()
+      drlist_cond = list()
       for(l in 1:L){
-        drlist[[l]] = dratio_ML(modellist,Xlist[[l]],L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize, condA = condA, modellist_A = modellist_A)
+        dr_result_l = dratio_ML(modellist,Xlist[[l]],L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize, condA = TRUE, modellist_A = modellist_A)
+        drlist_uncond[[l]] = dr_result_l$dr_uncond
+        drlist_cond[[l]] = dr_result_l$dr_cond
       }
     }else{
       modellist = models
-      dr = dratio_ML(modellist,X0,L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize)
-      drlist = list()
+      dr_uncond = dratio_ML(modellist,X0,L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize)
+      dr_cond = dr_uncond  # Same as unconditional when condA = FALSE
+      
+      drlist_uncond = list()
+      drlist_cond = list()
       for(l in 1:L){
-        drlist[[l]] = dratio_ML(modellist,Xlist[[l]],L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize)
+        drlist_uncond[[l]] = dratio_ML(modellist,Xlist[[l]],L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize)
+        drlist_cond[[l]] = drlist_uncond[[l]]
       }
     }
   }
@@ -689,23 +718,25 @@ maximin_s_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,s
     Xtrainlist_pseudo[[maxind]] = extract_half_rows1(Xtrainlist[[maxind]])
     
     if(dr_type == 'logit'){
-      modellist = or_estimation_logit(Xtrainlist_pseudo,Xtrainmax, condA = condA, q = q)
+      modellist_new = or_estimation_logit(Xtrainlist_pseudo,Xtrainmax, condA = condA, q = q)
       if(condA){
-        modellist = models$modellist
-        modellist_A = models$modellist_A
-        dr_new = dratio_logit(modellist,X0,L,Nlist = sapply(Xtrainlist_pseudo,nrow),n0 = nrow(Xtrainmax),normalize = normalize, condA = condA, modellist_A = modellist_A, q = q)
+        modellist = modellist_new$modellist
+        modellist_A = modellist_new$modellist_A
+        dr_result_new = dratio_logit(modellist,X0,L,Nlist = sapply(Xtrainlist_pseudo,nrow),n0 = nrow(Xtrainmax),normalize = normalize, condA = TRUE, modellist_A = modellist_A, q = q)
+        dr_new = dr_result_new$dr_cond  # Use conditional for rho estimation
       }else{
-        modellist = models
+        modellist = modellist_new
         dr_new = dratio_logit(modellist,X0,L,Nlist = sapply(Xtrainlist_pseudo,nrow),n0 = nrow(Xtrainmax),normalize = normalize)
       }
     }else{
-      modellist = or_estimation_ML(Xtrainlist_pseudo,Xtrainmax,dr_type = dr_type, condA = condA, q = q)
+      modellist_new = or_estimation_ML(Xtrainlist_pseudo,Xtrainmax,dr_type = dr_type, condA = condA, q = q)
       if(condA){
-        modellist = models$modellist
-        modellist_A = models$modellist_A
-        dr_new = dratio_ML(modellist,X0,L,Nlist = sapply(Xtrainlist_pseudo,nrow),n0 = nrow(Xtrainmax),normalize = normalize, condA = condA, modellist_A = modellist_A)
+        modellist = modellist_new$modellist
+        modellist_A = modellist_new$modellist_A
+        dr_result_new = dratio_ML(modellist,X0,L,Nlist = sapply(Xtrainlist_pseudo,nrow),n0 = nrow(Xtrainmax),normalize = normalize, condA = TRUE, modellist_A = modellist_A)
+        dr_new = dr_result_new$dr_cond  # Use conditional for rho estimation
       }else{
-        modellist = models
+        modellist = modellist_new
         dr_new = dratio_ML(modellist,X0,L,Nlist = sapply(Xtrainlist_pseudo,nrow),n0 = nrow(Xtrainmax),normalize = normalize)
       }
     }
@@ -720,23 +751,25 @@ maximin_s_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,s
     Xpool = do.call(rbind,lasthalf_Xtrainlist)
     
     if(dr_type == 'logit'){
-      modellist = or_estimation_logit(half_Xtrainlist,Xpool, condA = condA, q = q)
+      modellist_new = or_estimation_logit(half_Xtrainlist,Xpool, condA = condA, q = q)
       if(condA){
-        modellist = models$modellist
-        modellist_A = models$modellist_A
-        dr_new = dratio_logit(modellist,X0,L,Nlist = sapply(half_Xtrainlist,nrow),n0 = nrow(Xpool),normalize = normalize, condA = condA, modellist_A = modellist_A, q = q)
+        modellist = modellist_new$modellist
+        modellist_A = modellist_new$modellist_A
+        dr_result_new = dratio_logit(modellist,X0,L,Nlist = sapply(half_Xtrainlist,nrow),n0 = nrow(Xpool),normalize = normalize, condA = TRUE, modellist_A = modellist_A, q = q)
+        dr_new = dr_result_new$dr_cond  # Use conditional for rho estimation
       }else{
-        modellist = models
+        modellist = modellist_new
         dr_new = dratio_logit(modellist,X0,L,Nlist = sapply(half_Xtrainlist,nrow),n0 = nrow(Xpool),normalize = normalize)
       }
     }else{
-      modellist = or_estimation_ML(half_Xtrainlist,Xpool,dr_type = dr_type, condA = condA, q = q)
+      modellist_new = or_estimation_ML(half_Xtrainlist,Xpool,dr_type = dr_type, condA = condA, q = q)
       if(condA){
-        modellist = models$modellist
-        modellist_A = models$modellist_A
-        dr_new = dratio_ML(modellist,X0,L,Nlist = sapply(half_Xtrainlist,nrow),n0 = nrow(Xpool),normalize = normalize, condA = condA, modellist_A = modellist_A)
+        modellist = modellist_new$modellist
+        modellist_A = modellist_new$modellist_A
+        dr_result_new = dratio_ML(modellist,X0,L,Nlist = sapply(half_Xtrainlist,nrow),n0 = nrow(Xpool),normalize = normalize, condA = TRUE, modellist_A = modellist_A)
+        dr_new = dr_result_new$dr_cond  # Use conditional for rho estimation
       }else{
-        modellist = models
+        modellist = modellist_new
         dr_new = dratio_ML(modellist,X0,L,Nlist = sapply(half_Xtrainlist,nrow),n0 = nrow(Xpool),normalize = normalize)
       }
     }
@@ -744,21 +777,25 @@ maximin_s_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,s
     rho = mulcvxr(L,dr_new)
     
   }else{
-    # use true density ratio against target to get rho
-    rho = mulcvxr(L,dr)
+    # use density ratio against target to get rho
+    # Use conditional dr if condA = TRUE, otherwise unconditional
+    rho = mulcvxr(L,dr_cond)
   }
   
   betalist = lasso_imputation(Xtrainlist,Ytrainlist,nlist) # imputation model fit by aux data
-  post = posterior(rho,dr,n0)
+  
+  # Use conditional dr for posterior if condA = TRUE
+  post = posterior(rho,dr_cond,n0)
   postlist = list()
   for(l in 1:L){
-    postlist[[l]] = posterior(rho,drlist[[l]],Nlist[[l]])
+    postlist[[l]] = posterior(rho,drlist_cond[[l]],Nlist[[l]])
   }
   
   Sigma0 = (1/n0) * t(X0[,1:(q+1)]) %*% X0[,1:(q+1)]
   
+  # Always use unconditional dr for DRcoef and PQ calculation
   PQ = PQCalculation(X0,Xlist,Ylist,X0train,Xtrainlist,Ytrainlist,nlist,post,postlist,
-                     drlist,betalist,q,penalty,alpha)
+                     drlist_uncond,betalist,q,penalty,alpha)
   P = PQ$P
   Q = PQ$Q
   
@@ -777,7 +814,7 @@ maximin_s_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,s
              DoublyR = Q,
              deltas = dts_star,
              rho = rho,
-             dr = dr)
+             dr = dr_uncond)  # Return unconditional dr
   return(out)
 }
 

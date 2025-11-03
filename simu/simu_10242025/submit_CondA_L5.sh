@@ -9,20 +9,9 @@ mkdir -p "${job_directory}/job"
 mkdir -p "${job_directory}/out"
 mkdir -p "${job_directory}/err"
 
-# Check if renv is set up (optional check)
-if [ ! -d "${project_root}/renv/library" ]; then
-    echo "WARNING: renv library not found. You may need to run setup first."
-    echo "Run: sbatch ${job_directory}/setup_job.sh"
-    read -p "Continue anyway? (y/n) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        exit 1
-    fi
-fi
-
 echo "Submitting simulation jobs..."
 
-for i in {1..3}; do
+for i in {1..50}; do
     random_seed=${i}
 
     job_file="${job_directory}/job/CondA_L5_${i}.job"
@@ -48,9 +37,8 @@ Rscript ${project_root}/simu/NewSimu_CondA_L5.R ${random_seed}" > $job_file
     sbatch $job_file
     
     # Optional: add a small delay to avoid overwhelming the scheduler
-    if [ $((i % 10)) -eq 0 ]; then
+    if [ $((i % 5)) -eq 0 ]; then
         echo "Submitted $i jobs..."
-        sleep 1
     fi
 done
 

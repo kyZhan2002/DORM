@@ -30,7 +30,7 @@ Generate_Simulation_Data_CondA = function(L, p, q, Nlist, nlist, n0, mixture,
   
   # Create source-specific WtoA matrices (different W|A models for each source)
   WtoA_list = list()
-  base_WtoA = 1 * matrix(c(1, 0, -1, 0,
+  base_WtoA = 0.6 * matrix(c(1, 0, -1, 0,
                            0, 1, 0, -1,
                            0, 0, 1, 0,
                           -1, 0, 2, 1,

@@ -1,6 +1,8 @@
 ## Simulation script for Conditional A DORM method with L=5
-
+renv::deactivate()
+.libPaths()
 cat("=== Initializing environment ===\n")
+
 
 # Try to use here package, but provide fallback
 if (requireNamespace("here", quietly = TRUE)) {
@@ -48,7 +50,7 @@ simplex_uniform = function(dim){
 ## Get seed from command line argument
 args = commandArgs(trailingOnly = TRUE)
 if(length(args) == 0){
-  seed = 1  # default seed for testing
+  seed = 123  # default seed for testing
   cat("No seed provided, using default seed =",seed,"\n")
 } else {
   seed = as.integer(args[1])
@@ -61,7 +63,7 @@ set.seed(seed)
 
 L = 5     # number of source sites
 q = 4     # dim of low-d A
-p = 195    # rest dim of covariate X. Total dim of X is (1+q+p)
+p = 95    # rest dim of covariate X. Total dim of X is (1+q+p)
 ptemp = 6
 
 # Sample sizes
@@ -75,34 +77,34 @@ delta = c(0, 0, 0, 0, 1)    # Perturbation mixture
 
 # Mean of A for each source
 MU_A = 0.5 * matrix(c(-2, 0, 1, 0,
-                       0, -1, 2, 1,
+                      0, -1, 2, 1,
                       -1, 2, 0, 1,
-                       1, 1, -1, 2,
-                       2, 1, 1, 2), nrow = L, ncol = q, byrow = TRUE)
+                      1, 1, -1, 2,
+                      2, 1, 1, 2), nrow = L, ncol = q, byrow = TRUE)
 
 # True BETA coefficients
 BETA = 1 * matrix(c( 0, 4, 4, 3, -3,  0.5, -0.2, 0, 0, 1, 0,
-                    -3, 3, -1, 3, -3,  0, 0.5, -0.2, 0, 0, 1,
-                    -3, -3, 0, -3, -3,  0, 0, 0.2, -0.5, 0, 1,
-                    -6, 6, 6, 6, -6,   1, 0, 0, 0.2, -0.5, 0,
-                    -3, 3, 0, 0, 1,    0, 0, 0, 1, 0.2, -0.5),
-                  nrow = L, ncol = ptemp + q + 1, byrow = TRUE)
+                       -3, 3, -1, 3, -3,  0, 0.5, -0.2, 0, 0, 1,
+                       -3, -3, 0, -3, -3,  0, 0, 0.2, -0.5, 0, 1,
+                       -6, 6, 6, 6, -6,   1, 0, 0, 0.2, -0.5, 0,
+                       -3, 3, 0, 0, 1,    0, 0, 0, 1, 0.2, -0.5),
+                    nrow = L, ncol = ptemp + q + 1, byrow = TRUE)
 
 # Simulation parameters
 smax_array = seq(0.05, 0.5, 0.05)
 nsmax = length(smax_array)
 trues_array = seq(0, 0.5, 0.05)
 ntrues = length(trues_array)
-delta_num = 50  # Number of random deltas to average over
+delta_num = 100  # Number of random deltas to average over
 
 ## Step 1: Generate training data and fit DORM models for each smax
 
 cat("=== Generating training data ===\n")
 dat = Generate_Simulation_Data_CondA(L, p, q, Nlist, nlist, n0, mixture,
-                                      delta, s = 0, MU_A, BETA, ptemp, 
-                                      MU_Acoef = 1, eps_A = 1, eps_W = 0.1,
-                                      eps_beta = 0.1, eps_Y = 0.25,
-                                      sd_WA = 1, tarmixA = FALSE)
+                                     delta, s = 0.1, MU_A, BETA, ptemp, 
+                                     MU_Acoef = 1, eps_A = 1, eps_W = 0.1,
+                                     eps_beta = 0.1, eps_Y = 0.25,
+                                     sd_WA = 1, tarmixA = FALSE)
 
 cat("=== Fitting DORM models for different smax values ===\n")
 cat(sprintf("Total smax values to fit: %d\n", nsmax))
@@ -117,7 +119,7 @@ for(i in 1:nsmax){
                          dat$Ylist, dat$Ytrainlist,
                          dat$X0, dat$X0train, nlist, q, smax,
                          penalty = FALSE, alpha = 0.5, 
-                         rho_pseudo = 'pool', dr_type = 'logit',
+                         rho_pseudo = 'NA', dr_type = 'logit',
                          normalize = FALSE, condA = TRUE)
   
   result_list[[as.character(smax)]] <- result
@@ -172,9 +174,9 @@ for(i in 1:nsmax){
     for(k in 1:delta_num){
       # Generate random delta (simplex uniform)
       if(k == 1){
-        delta_test = rep(1/L, L)  # Start with uniform
+        delta_test = c(0,0,0,0,1)
       }else{
-        delta_test = simplex_uniform(dim = L)
+        delta_test = 0.5 * simplex_uniform(dim = L) + 0.5 * c(0,0,0,0,1)
       }
       
       # Generate test data
@@ -188,8 +190,8 @@ for(i in 1:nsmax){
       
       # Compute errors
       bb = benchmarks(datte$X0, datte$Y0, q, 
-                     result$beta_star, result$beta_MI, result$rho,
-                     result$beta_RAP, result$DoublyR)
+                      result$beta_star, result$beta_MI, result$rho,
+                      result$beta_RAP, result$DoublyR)
       
       resvec = bb$errvec
       single = bb$single_site
@@ -224,6 +226,9 @@ colnames(final_worst) <- c("smax", "true-s", "Ours", "SS", "SA", "RA", "MI", "PA
 colnames(final_ave) <- c("smax", "true-s", "Ours", "SS", "SA", "RA", "MI", "PA",
                          paste0("d", 1:L), "s", paste0("SS", 1:L))
 
+final_worst <- final_worst[order(final_worst$`true-s`), ]
+
+
 ## Step 3: Save results
 
 output_dir = here('simu', 'simu_10242025', 'data')
@@ -238,17 +243,17 @@ output_file_ave = file.path(output_dir, paste0("CondA_L5_ave_seed", seed, ".rds"
 saveRDS(list(
   final_worst = final_worst,
   parameters = list(L = L, q = q, p = p, mixture = mixture,
-                   smax_array = smax_array, trues_array = trues_array,
-                   delta_num = delta_num, Nlist = Nlist, nlist = nlist, n0 = n0,
-                   seed = seed)
+                    smax_array = smax_array, trues_array = trues_array,
+                    delta_num = delta_num, Nlist = Nlist, nlist = nlist, n0 = n0,
+                    seed = seed)
 ), file = output_file_worst)
 
 saveRDS(list(
   final_ave = final_ave,
   parameters = list(L = L, q = q, p = p, mixture = mixture,
-                   smax_array = smax_array, trues_array = trues_array,
-                   delta_num = delta_num, Nlist = Nlist, nlist = nlist, n0 = n0,
-                   seed = seed)
+                    smax_array = smax_array, trues_array = trues_array,
+                    delta_num = delta_num, Nlist = Nlist, nlist = nlist, n0 = n0,
+                    seed = seed)
 ), file = output_file_ave)
 
 cat("\n=== Results saved ===\n")
