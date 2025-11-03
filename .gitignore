@@ -2,6 +2,7 @@
 node_modules/
 venv/
 env/
+renv/
 *.egg-info/
 __pycache__/
 *.pyc
@@ -35,14 +36,16 @@ build/
 *.secret
 
 # Simulation results
-simulation_results/
-results/
 *.sim
 *.out
 output/
 data/output/
 .Rproj.user
 .Rhistory
-.rds
+**/*.rds
 .RData
-simu/simu_10242025/data
+**/*.job
+**/*.err
+*.err
+*.rds
+*.job
