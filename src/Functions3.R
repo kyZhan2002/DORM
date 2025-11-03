@@ -149,9 +149,9 @@ or_estimation_ML = function(Xlist,X0,dr_type = 'rf', report = TRUE, condA = FALS
     }
     
     if(report){
-    # Print the best parameters
-    print(paste("Best parameters for model", l, ":", sep=" "))
-    print(modellist[[l]]$bestTune)
+      # Print the best parameters
+      print(paste("Best parameters for model", l, ":", sep=" "))
+      print(modellist[[l]]$bestTune)
     }
   }
   
@@ -186,7 +186,7 @@ or_estimation_logit = function(Xlist,Xtar,alpha_dr = 0.5, condA = FALSE, q = NUL
     X = X[,-1] ## remove the intercept which already exist in X.
     
     cv_fit = cv.glmnet(X, y, alpha = alpha_dr, family = "binomial")
-  
+    
     best_lambda = cv_fit$lambda.min
     
     final_model = glmnet(X, y, alpha = alpha_dr, lambda = best_lambda, family = "binomial")
@@ -210,14 +210,14 @@ or_estimation_logit = function(Xlist,Xtar,alpha_dr = 0.5, condA = FALSE, q = NUL
 }
 
 
-dratio_ML = function(modellist,X0,L,Nlist,n0,bound = 1e6,normalize = FALSE, condA = FALSE, modellist_A = NULL){
+dratio_ML = function(modellist,X0,L,Nlist,n0,bound = 1e6,normalize = FALSE, condA = FALSE, modellist_A = NULL, q = NULL){
   
   ## The function output a L*n0 density ratio matrix, each row is density ratio:dP(target X0) to dP(source)
   ## We multiply nl/n0 here!!! This is density ratio
   
   X0 = X0[,-1] # Remove interception
   X0 = as.data.frame(X0)  # Convert once outside the loop
-
+  
   dr = matrix(0,nrow=L,ncol=nrow(X0))
   for(l in 1:L){
     pred = predict(modellist[[l]],X0,type = "prob")
@@ -241,11 +241,12 @@ dratio_ML = function(modellist,X0,L,Nlist,n0,bound = 1e6,normalize = FALSE, cond
     if(is.null(modellist_A)){
       stop("modellist_A must be provided when condA = TRUE")
     }
+    if(is.null(q)){
+      stop("q must be provided when condA = TRUE for dratio_ML")
+    }
     
     dr_A = matrix(0,nrow=L,ncol=nrow(X0))
-    q_A = ncol(modellist_A[[1]]$trainingData)  # Infer q from model
-    print(q_A)
-    X0_A = X0[, 1:q_A]
+    X0_A = X0[, 1:q]
     
     for(l in 1:L){
       pred_A = predict(modellist_A[[l]],X0_A,type = "prob")
@@ -397,7 +398,7 @@ posterior = function(rho,dr,n0){
 }
 
 DRcoef_calculation = function(X0,Xlist,Ylist,nlist,post,postlist,drlist,
-                            betalist,q){
+                              betalist,q){
   
   # Calculate the doubly robust coefficients (vectorized version)
   
@@ -502,7 +503,7 @@ PQCalculation = function(X0,Xlist,Ylist,X0train,Xtrainlist,Ytrainlist,nlist,post
   Sigma = (1/n0) * t(X0[,1:(q+1)]) %*% X0[,1:(q+1)]
   
   if(penalty == TRUE){
-  
+    
     Q = matrix(data = 0,nrow = q+1,ncol = L)
     
     lenl = 30
@@ -684,14 +685,14 @@ maximin_s_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,s
       modellist = models$modellist
       modellist_A = models$modellist_A
       # Compute BOTH unconditional and conditional density ratios in one call
-      dr_result = dratio_ML(modellist,X0,L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize, condA = TRUE, modellist_A = modellist_A)
+      dr_result = dratio_ML(modellist,X0,L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize, condA = TRUE, modellist_A = modellist_A, q = q)
       dr_uncond = dr_result$dr_uncond
       dr_cond = dr_result$dr_cond
       
       drlist_uncond = list()
       drlist_cond = list()
       for(l in 1:L){
-        dr_result_l = dratio_ML(modellist,Xlist[[l]],L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize, condA = TRUE, modellist_A = modellist_A)
+        dr_result_l = dratio_ML(modellist,Xlist[[l]],L,Nlist = sapply(Xtrainlist,nrow),n0 = nrow(X0train),normalize = normalize, condA = TRUE, modellist_A = modellist_A, q = q)
         drlist_uncond[[l]] = dr_result_l$dr_uncond
         drlist_cond[[l]] = dr_result_l$dr_cond
       }
@@ -733,7 +734,7 @@ maximin_s_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,s
       if(condA){
         modellist = modellist_new$modellist
         modellist_A = modellist_new$modellist_A
-        dr_result_new = dratio_ML(modellist,X0,L,Nlist = sapply(Xtrainlist_pseudo,nrow),n0 = nrow(Xtrainmax),normalize = normalize, condA = TRUE, modellist_A = modellist_A)
+        dr_result_new = dratio_ML(modellist,X0,L,Nlist = sapply(Xtrainlist_pseudo,nrow),n0 = nrow(Xtrainmax),normalize = normalize, condA = TRUE, modellist_A = modellist_A, q = q)
         dr_new = dr_result_new$dr_cond  # Use conditional for rho estimation
       }else{
         modellist = modellist_new
@@ -744,7 +745,7 @@ maximin_s_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,s
     rho = mulcvxr(L,dr_new)
     
   }else if(rho_pseudo == 'pool'){
-
+    
     cat('dr_pseudo use pooled source training data','\n')
     half_Xtrainlist = lapply(Xtrainlist, extract_half_rows1)
     lasthalf_Xtrainlist = lapply(Xtrainlist,extract_half_rows2)
@@ -766,7 +767,7 @@ maximin_s_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,s
       if(condA){
         modellist = modellist_new$modellist
         modellist_A = modellist_new$modellist_A
-        dr_result_new = dratio_ML(modellist,X0,L,Nlist = sapply(half_Xtrainlist,nrow),n0 = nrow(Xpool),normalize = normalize, condA = TRUE, modellist_A = modellist_A)
+        dr_result_new = dratio_ML(modellist,X0,L,Nlist = sapply(half_Xtrainlist,nrow),n0 = nrow(Xpool),normalize = normalize, condA = TRUE, modellist_A = modellist_A, q = q)
         dr_new = dr_result_new$dr_cond  # Use conditional for rho estimation
       }else{
         modellist = modellist_new
@@ -819,9 +820,14 @@ maximin_s_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,s
 }
 
 get_DORM_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,smax,penalty = FALSE, alpha = 0.5,
-                          rho_pseudo = "NA", dr_type = "rf",normalize = FALSE, condA = FALSE){
+                         rho_pseudo = "NA", dr_type = "rf",normalize = FALSE, condA = FALSE){
   
   # Use sample splitting: beta = 0.5 (betaA + betaB)
+  
+  cat("Fitting density ratio model using",dr_type,"with conditional on A=",condA)
+  if(penalty){
+    cat("Fitting high dimensional DORM using elastic net, alpha=",alpha)
+  }
   
   out1 = maximin_s_beta(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,smax,penalty,alpha,rho_pseudo,dr_type,normalize = normalize, condA = condA)
   out2 = maximin_s_beta(Xtrainlist,Xlist,Ytrainlist,Ylist,X0train,X0,nlist,q,smax,penalty,alpha,rho_pseudo,dr_type,normalize = normalize, condA = condA)

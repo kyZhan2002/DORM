@@ -11,14 +11,14 @@ mkdir -p "${job_directory}/err"
 
 echo "Submitting simulation jobs..."
 
-for i in {1..50}; do
+for i in {1..5}; do
     random_seed=${i}
 
     job_file="${job_directory}/job/CondA_L5_${i}.job"
 
     echo "#!/bin/bash
 #SBATCH -c 1
-#SBATCH -t 0-10:00
+#SBATCH -t 0-08:00
 #SBATCH -p short
 #SBATCH --output=${job_directory}/out/CondA_L5_${i}.out
 #SBATCH --error=${job_directory}/err/CondA_L5_${i}.err

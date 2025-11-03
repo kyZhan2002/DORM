@@ -76,7 +76,7 @@ mixture = c(0.5, 0, 0.5, 0, 0)  # Target mixture weights
 delta = c(0, 0, 0, 0, 1)    # Perturbation mixture
 
 # Mean of A for each source
-MU_A = 0.5 * matrix(c(-2, 0, 1, 0,
+MU_A = 0.6 * matrix(c(-2, 0, 1, 0,
                       0, -1, 2, 1,
                       -1, 2, 0, 1,
                       1, 1, -1, 2,
@@ -119,7 +119,7 @@ for(i in 1:nsmax){
                          dat$Ylist, dat$Ytrainlist,
                          dat$X0, dat$X0train, nlist, q, smax,
                          penalty = FALSE, alpha = 0.5, 
-                         rho_pseudo = 'NA', dr_type = 'logit',
+                         rho_pseudo = 'NA', dr_type = 'rf',
                          normalize = FALSE, condA = TRUE)
   
   result_list[[as.character(smax)]] <- result
