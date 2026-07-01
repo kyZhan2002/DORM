@@ -1,9 +1,3 @@
-source('/n/data1/hsph/biostat/celehs/lab/kez641/REMIX/SourceCode/TransLG-functions.R')
-source('/n/data1/hsph/biostat/celehs/lab/kez641/REMIX/SourceCode/DataGeneration_contam.R')
-source('/n/data1/hsph/biostat/celehs/lab/kez641/REMIX/SourceCode/Functions3.R')
-source('/n/data1/hsph/biostat/celehs/lab/kez641/REMIX/SourceCode/Tuning.R')
-source('/n/data1/hsph/biostat/celehs/lab/kez641/REMIX/SourceCode/Evaluation.R')
-
 #########################
 r = 0.5
 mixture = c(r,0,1-r,0,0)    # How target is mixed by sources. Here 1/2 from site 1 and 1/2 from site 3.

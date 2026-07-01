@@ -1,4 +1,3 @@
-source('/n/data1/hsph/biostat/celehs/lab/kez641/REMIX/SourceCode/TransLasso-functions.R')
 library(glmtrans)
 library(glmnet)
 

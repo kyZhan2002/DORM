@@ -3,6 +3,7 @@ node_modules/
 venv/
 env/
 renv/
+.venv/
 *.egg-info/
 __pycache__/
 *.pyc
@@ -49,3 +50,7 @@ data/output/
 *.err
 *.rds
 *.job
+*.csv
+
+# Large single-cell data (too big for GitHub's 100 MB limit)
+*.h5ad

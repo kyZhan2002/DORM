@@ -1,4 +1,4 @@
-## This R script runs over different L
+## This R script runs over different L = 3, can be changed to different L and rho within this script
 
 source('DataGeneration3.R')
 source('Functions3.R')

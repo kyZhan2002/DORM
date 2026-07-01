@@ -1,9 +1,3 @@
-source('/n/data1/hsph/biostat/celehs/lab/kez641/REMIX/SourceCode/TransLG-functions.R')
-source('/n/data1/hsph/biostat/celehs/lab/kez641/REMIX/SourceCode/DataGeneration_contam.R')
-source('/n/data1/hsph/biostat/celehs/lab/kez641/REMIX/SourceCode/Functions3.R')
-source('/n/data1/hsph/biostat/celehs/lab/kez641/REMIX/SourceCode/Tuning.R')
-source('/n/data1/hsph/biostat/celehs/lab/kez641/REMIX/SourceCode/Evaluation.R')
-
 # Get command line arguments
 args <- commandArgs(trailingOnly = TRUE)
 

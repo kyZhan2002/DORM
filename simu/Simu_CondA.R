@@ -237,38 +237,17 @@ if(!dir.exists(output_dir)){
   cat("Created output directory:", output_dir, "\n")
 }
 
-output_file_worst = file.path(output_dir, paste0("CondA_L5_worst_seed", seed, ".rds"))
-output_file_ave = file.path(output_dir, paste0("CondA_L5_ave_seed", seed, ".rds"))
+output_file = file.path(output_dir, paste0("CondA_L5_seed", seed, ".rds"))
 
 saveRDS(list(
   final_worst = final_worst,
-  parameters = list(L = L, q = q, p = p, mixture = mixture,
-                    smax_array = smax_array, trues_array = trues_array,
-                    delta_num = delta_num, Nlist = Nlist, nlist = nlist, n0 = n0,
-                    seed = seed)
-), file = output_file_worst)
-
-saveRDS(list(
   final_ave = final_ave,
+  result_list = result_list,
   parameters = list(L = L, q = q, p = p, mixture = mixture,
                     smax_array = smax_array, trues_array = trues_array,
                     delta_num = delta_num, Nlist = Nlist, nlist = nlist, n0 = n0,
                     seed = seed)
-), file = output_file_ave)
+), file = output_file)
 
 cat("\n=== Results saved ===\n")
-cat("Worst case:", output_file_worst, "\n")
-cat("Average case:", output_file_ave, "\n")
-
-## Step 4: Print summary statistics
-
-cat("\n=== Summary Statistics ===\n")
-cat(sprintf("Total computation time: %.2f minutes\n", 
-            as.numeric(difftime(Sys.time(), start_time, units = "mins"))))
-cat("Worst case performance:\n")
-print(summary(final_worst[, c("Ours", "SS", "SA", "RA", "MI", "PA")]))
-
-cat("\nAverage case performance:\n")
-print(summary(final_ave[, c("Ours", "SS", "SA", "RA", "MI", "PA")]))
-
-cat("\nSimulation completed successfully!\n")
+cat("Output file:", output_file, "\n")

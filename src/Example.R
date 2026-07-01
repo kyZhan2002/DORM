@@ -208,7 +208,7 @@ ptemp = 6
 # Sample sizes
 Nlist = rep(1000, L)
 nlist = rep(500, L)
-n0 = 500
+n0 = 1000
 
 # Mixture parameters
 mixture = c(0.5, 0, 0.5, 0, 0)  # Target mixture weights
@@ -231,22 +231,29 @@ BETA = 1 * matrix(c( 0, 4, 4, 3, -3,  0.5, -0.2, 0, 0, 1, 0,
 
 # Generate data conditional on A
 Data_condA = Generate_Simulation_Data_CondA(L, p, q, Nlist, nlist, n0, mixture,
-                                             delta, s = 0.1, MU_A, BETA, ptemp, tarmixA = FALSE)
+                                             delta, s = 0.25, MU_A, BETA, ptemp, tarmixA = FALSE)
 
 # Run DORM with condA=TRUE to use conditional density ratio
-smax = 0.1
+smax = 0.25
 result_condA = get_DORM_beta(Data_condA$Xlist, Data_condA$Xtrainlist, 
                              Data_condA$Ylist, Data_condA$Ytrainlist,
                              Data_condA$X0, Data_condA$X0train, nlist, q, smax,
                              penalty = FALSE, alpha = 0.5, rho_pseudo = 'NA', 
-                             dr_type = "rf", normalize = FALSE, condA = TRUE)
+                             dr_type = "logit", normalize = FALSE, condA = TRUE)
 
 cat("\n=== CondA Model Results ===\n")
 cat("Estimated rho:", result_condA$rho, "\n")
 cat("Beta_DORM (first 5 coefs):", result_condA$beta_star, "\n")
 
+benchmarks(Data_condA$X0,Data_condA$Y0,q,result_condA$beta_star,result_condA$beta_MI,
+           result_condA$rho,result_condA$beta_RAP,result_condA$DoublyR)
 
-get_err(Data_condA$X0,Data_condA$Y0,result_condA$beta_star,q=4,nn=500)
+
+
+
+
+
+
 
 # Compare with standard model (condA=FALSE)
 result_standard = get_DORM_beta(Data_condA$Xlist, Data_condA$Xtrainlist, 

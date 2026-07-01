@@ -351,33 +351,61 @@ lasso_imputation = function(Xlist,Ylist,nlist){
   return(betalist)
 }
 
-mulcvxr = function(L, dr){
-  
-  # This function uses CVXR to solve the optimization for prior rho.
-  
-  #dr = matrix(0, nrow = nrow(or), ncol = ncol(or))
-  #for(l in 1:L){
-  #  dr[l,] = Nlist[l] / n0 * or[l,] # odds ratio * r = density ratio
-  #}
-  
-  ele = 1 / dr
-  r = Variable(L)
-  g = function(r){
-    p = t(r) %*% ele
-    return(mean(-log(p)))
+solve_robust = function(problem, solvers = c("ECOS", "SCS")){
+
+  # Solve a CVXR problem, trying solvers in order until one returns a usable
+  # (optimal / optimal_inaccurate) solution. Returns the solution object, or
+  # NULL if every solver fails. This guards against the "attempt to apply
+  # non-function" crash that occurs when solve() returns a solver_error and
+  # result$getValue is therefore not a callable function.
+
+  for(sv in solvers){
+    result = tryCatch(suppressWarnings(solve(problem, solver = sv)),
+                      error = function(e) NULL)
+    if(!is.null(result) &&
+       !is.null(result$status) &&
+       result$status %in% c("optimal", "optimal_inaccurate")){
+      return(result)
+    }
   }
-  
-  # Adding a small penalty term to the objective function
+  return(NULL)
+}
+
+mulcvxr = function(L, dr){
+
+  # This function uses CVXR to solve the optimization for prior rho:
+  #   minimize  mean( -log( sum_l r_l / dr[l,] ) ) + small ridge penalty
+  #   s.t.      sum_l r_l = 1,  EPS <= r_l <= 1 - EPS
+
+  ele = 1 / dr
+
+  # The objective depends on (1/dr) only up to a positive scale, so rescale by
+  # its median to keep the log argument well-conditioned for the solver. This
+  # avoids the solver_error that extreme density-ratio magnitudes can trigger.
+  scale = median(ele)
+  if(!is.finite(scale) || scale <= 0) scale = 1
+  ele = ele / scale
+
+  r = Variable(L)
+  p = t(r) %*% ele
   penalty = 1e-4 * sum_squares(r)
-  
+
   EPS = 1e-8
   constraints = list(sum(r) == 1, r >= EPS, r <= 1 - EPS)
-  
-  problem = Problem(Minimize(g(r) + penalty), constraints = constraints)
-  result = solve(problem)
-  opt.sol = result$getValue(r)
-  
-  # cat("Optimal solution:\n", opt.sol)
+
+  problem = Problem(Minimize(mean(-log(p)) + penalty), constraints = constraints)
+  result = solve_robust(problem)
+
+  if(is.null(result)){
+    warning("mulcvxr: solver failed for all solvers; falling back to uniform rho.")
+    return(rep(1 / L, L))
+  }
+
+  opt.sol = as.vector(result$getValue(r))
+
+  # Clean tiny numerical violations and renormalize onto the simplex.
+  opt.sol = pmin(pmax(opt.sol, 0), 1)
+  opt.sol = opt.sol / sum(opt.sol)
   opt.sol
 }
 
@@ -414,16 +442,20 @@ DRcoef_calculation = function(X0,Xlist,Ylist,nlist,post,postlist,drlist,
     n = nlist[l]
     X_source = Xlist[[l]][1:n, 1:(q+1)]
     res = Ylist[[l]] - Xlist[[l]][1:n,] %*% betalist[[l]]
+    
+    # Density ratio for source l: dP0/dPl evaluated at source l's observations
+    # drlist[[l]] is L x n matrix where row i is dP0/dPi at source l's points
+    # We want row l (dP0/dPl at source l's data)
     w = drlist[[l]][l, 1:n]
     po_source = postlist[[l]][1:n, l]
     
-    # Vectorized outer product sum: sum_j w_j * r_j * po_j * X_j
-    # Convert res to vector and use proper vectorization
+    # Vectorized outer product sum: sum_j w_j * r_j * X_j
     res_vec = as.vector(res)
     weighted_factor = w * res_vec
-    weighted_res = sweep(X_source, 1, weighted_factor, "*")  # multiply each row of X_source
+    weighted_res = sweep(X_source, 1, weighted_factor, "*")
     Ql2 = colSums(weighted_res) / n
     
+    # Second part with posterior weighting
     weighted_factor_po = po_source * w * res_vec
     secondPmat[l,] = colSums(sweep(X_source, 1, weighted_factor_po, "*")) / n
     
@@ -435,6 +467,8 @@ DRcoef_calculation = function(X0,Xlist,Ylist,nlist,post,postlist,drlist,
     m_vec = as.vector(m)
     weighted_m = sweep(X_target, 1, m_vec, "*")
     Ql1 = colSums(weighted_m) / n0
+    
+    # First part with posterior weighting
     firstPmat[l,] = colSums(sweep(X_target, 1, po_target * m_vec, "*")) / n0
     
     Q[,l] = Ql1 + Ql2 
@@ -502,7 +536,7 @@ PQCalculation = function(X0,Xlist,Ylist,X0train,Xtrainlist,Ytrainlist,nlist,post
   preQ = pre$preQ
   Sigma = (1/n0) * t(X0[,1:(q+1)]) %*% X0[,1:(q+1)]
   
-  if(penalty == TRUE){
+  if(penalty){
     
     Q = matrix(data = 0,nrow = q+1,ncol = L)
     
@@ -563,7 +597,6 @@ opt_delta = function(P,Q,Sigma0,s){
   ## This function optimizes quadratic form of delta.
   
   L = ncol(Q)
-  opt.weight=rep(NA, L)
   v = Variable(L)
   
   Gamma = s*t(Q) %*% Sigma0 %*% Q
@@ -579,8 +612,13 @@ opt_delta = function(P,Q,Sigma0,s){
   
   constraints = list(sum(v)== 1, v>=0 )
   prob.weight= Problem(objective, constraints)
-  result= solve(prob.weight)
-  opt.status=result$status
+  result = solve_robust(prob.weight)
+  
+  if(is.null(result)){
+    warning("opt_delta: solver failed; falling back to uniform delta.")
+    return(rep(1 / L, L))
+  }
+  
   opt.sol=result$getValue(v)
   opt.weight = ifelse(abs(opt.sol) > 1e-8, opt.sol, 0)
   return(opt.weight)
@@ -591,7 +629,6 @@ opt_s_delta = function(P,Q,Sigma0,smax){
   ## This function optimizes quadratic form of delta and smax.
   
   L = ncol(Q)
-  opt.weight=rep(NA, L+1)
   sd = Variable(L+1)
   
   QP = cbind(Q,P)
@@ -612,8 +649,13 @@ opt_s_delta = function(P,Q,Sigma0,smax){
   objective = Minimize(quad_form(sd,Gamma.positive))
   
   prob.weight= Problem(objective, constraints)
-  result= solve(prob.weight)
-  opt.status=result$status
+  result = solve_robust(prob.weight)
+  
+  if(is.null(result)){
+    warning("opt_s_delta: solver failed; falling back to s = 0 (pure RAP) with uniform delta.")
+    return(c(rep(1 / L, L), 0))
+  }
+  
   opt.sol=result$getValue(sd)
   opt.weight = ifelse(abs(opt.sol) > 1e-8, opt.sol, 0)
   opt.weight[L+1] = 1-opt.weight[L+1]
