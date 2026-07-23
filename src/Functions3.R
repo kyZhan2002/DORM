@@ -410,18 +410,29 @@ mulcvxr = function(L, dr){
 }
 
 posterior = function(rho,dr,n0){
-  
+
   # Calculate posterior eta from rho (vectorized version)
-  
+
   L = length(rho)
   # Vectorized computation: rho[l] / dr[l,] for all l at once
   # dr is L x n, we want to multiply row l by rho[l]
   post = sweep(1/dr, 1, rho, "*")  # MARGIN=1 to multiply rows by rho
   post = t(post)  # transpose to get n0 x L
-  
+
   # Normalize rows to sum to 1
-  post = post / rowSums(post)
-  
+  denom = rowSums(post)
+  # Guard for a SIGNED rho (intrinsic-source prior): the true normalizer
+  # sum_l rho_l * rbar_l(x) = sum_j rhoQ_j * rbar_{Q_j}(x) >= 0, but estimation
+  # noise can push a few points slightly non-positive. Floor them to a tiny value
+  # relative to the typical scale. This is a no-op on the standard (rho >= 0) path.
+  bad = !is.finite(denom) | (denom <= 0)
+  if(any(bad)){
+    fl = 1e-6 * stats::median(abs(denom[is.finite(denom)]))
+    if(!is.finite(fl) || fl <= 0) fl = 1e-12
+    denom[bad] = fl
+  }
+  post = post / denom
+
   return(post)
 }
 
@@ -539,7 +550,11 @@ PQCalculation = function(X0,Xlist,Ylist,X0train,Xtrainlist,Ytrainlist,nlist,post
   if(penalty){
     
     Q = matrix(data = 0,nrow = q+1,ncol = L)
-    
+
+    # The first column of the pseudo-design corresponds to the intercept feature;
+    # the intercept must NOT be penalized (as in standard lasso/ridge/elastic net).
+    pf = c(0, rep(1, q))
+
     lenl = 30
     lambda_seq = 10^seq(-3, 0, length.out = lenl)
     DRloss_seq = rep(0,lenl)
@@ -555,13 +570,13 @@ PQCalculation = function(X0,Xlist,Ylist,X0train,Xtrainlist,Ytrainlist,nlist,post
       pY = pse$pY
       
       for(k in 1:lenl){
-        test_fit = glmnet(x = pX,y = pY, alpha = alpha, lambda = lambda_seq[k],intercept = FALSE)
+        test_fit = glmnet(x = pX,y = pY, alpha = alpha, lambda = lambda_seq[k],intercept = FALSE, penalty.factor = pf)
         b = as.vector(coef(test_fit)[-1])
         DRloss_seq[k] = b %*% Sigmat %*% b - 2 * b %*% tpreQ[,l]
       }
       best_index = which.min(DRloss_seq)
       best_lambda = lambda_seq[best_index]
-      eln_fit = glmnet(x= pX, y= pY, alpha = alpha, lambda = best_lambda, intercept = FALSE)
+      eln_fit = glmnet(x= pX, y= pY, alpha = alpha, lambda = best_lambda, intercept = FALSE, penalty.factor = pf)
       Q[,l] = as.vector(coef(eln_fit)[-1])
     }
     
@@ -582,7 +597,11 @@ PQCalculation = function(X0,Xlist,Ylist,X0train,Xtrainlist,Ytrainlist,nlist,post
     out = list(P=P,Q=Q)
     
   }else{
-    Sigma_inv = solve(Sigma)  
+    # Ridge-stabilised normal equations: a tiny relative ridge keeps solve() well-defined
+    # when the target design Sigma is rank-deficient / collinear (e.g. a single-subtype
+    # target). Negligible when Sigma is well-conditioned.
+    ridge = 1e-6 * mean(diag(Sigma))
+    Sigma_inv = solve(Sigma + ridge * diag(nrow(Sigma)))
     P = Sigma_inv %*% preP
     Q = Sigma_inv %*% preQ
     out = list(P=P,Q=Q)
@@ -681,14 +700,26 @@ extract_half_rows2 = function(mat) {
 }
 
 maximin_s_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,smax,penalty = FALSE, alpha = 0.5,
-                          rho_pseudo = "NA", dr_type = "rf",normalize = FALSE, condA = FALSE){
-  
+                          rho_pseudo = "NA", dr_type = "rf",normalize = FALSE, condA = FALSE,
+                          signed_prior = FALSE,
+                          prior_Xlist = NULL, prior_Xtrainlist = NULL, prior_X0 = NULL, prior_X0train = NULL){
+
   # This is the main algorithm of calculating DORM beta.
-  
+  #
+  # signed_prior: if TRUE, use the intrinsic-source (projection-primary) prior instead
+  #   of the default simplex projection. The prior mixture weights are the KL-projection
+  #   of the target onto the SIGNED-AFFINE valid-mixture set R (see signed_affine_prior
+  #   in src/IntrinsicSources.R), which enlarges Delta_L so the target may be a mixture
+  #   "purer" than any observed source. Requires no intrinsic-source recovery.
+
   L = length(Xlist)
   n0 = nrow(X0)
   Nlist = sapply(Xlist, nrow)
   lam = n0 ** (-1/3)
+
+  if(signed_prior && !exists("signed_affine_prior")){
+    stop("signed_prior = TRUE but signed_affine_prior() not found; source src/IntrinsicSources.R.")
+  }
   
   ## Cross-fitting: using auxiliary data to train nuisance models
   
@@ -751,7 +782,19 @@ maximin_s_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,s
       }
     }
   }
-  
+
+  ## Intrinsic-source prior in a SEPARATE space (e.g. a batch-robust embedding). When prior_Xlist is
+  ## supplied with signed_prior, the signed-affine OBJECTIVE (which target-mixture to fit) is estimated
+  ## in that space via prior_X0 vs prior_X0train (dr_prior), giving the demixed/enlarged extrapolation
+  ## direction. The VALIDITY constraint below is still enforced on the FULL-X (gene) ratios where the
+  ## posterior applies rho, so the induced mixture stays >= eps there and the denominator cannot blow
+  ## up. Posterior / PQ / DRcoef / predictor all keep the full-X ratio. Default => objective = full-X.
+  dr_prior = dr_cond
+  if(signed_prior && !is.null(prior_Xlist)){
+    prior_models = or_estimation_logit(prior_Xtrainlist, prior_X0train, condA = FALSE)
+    dr_prior = dratio_logit(prior_models, prior_X0, L, Nlist = sapply(prior_Xtrainlist,nrow), n0 = nrow(prior_X0train), normalize = normalize)
+  }
+
   if(rho_pseudo == 'max'){
     
     maxind = which.max(Nlist)
@@ -817,17 +860,22 @@ maximin_s_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,s
       }
     }
     
-    rho = mulcvxr(L,dr_new)
-    
+    rho = if(!signed_prior) mulcvxr(L,dr_new) else
+            signed_affine_prior(dr_new, c(list(dr_new), drlist_cond))
+
   }else{
     # use density ratio against target to get rho
     # Use conditional dr if condA = TRUE, otherwise unconditional
-    rho = mulcvxr(L,dr_cond)
+    rho = if(!signed_prior) mulcvxr(L,dr_cond) else
+            signed_affine_prior(dr_prior, c(list(dr_cond), drlist_cond))
   }
   
   betalist = lasso_imputation(Xtrainlist,Ytrainlist,nlist) # imputation model fit by aux data
-  
-  # Use conditional dr for posterior if condA = TRUE
+
+  # Use conditional dr for posterior if condA = TRUE. For the signed-affine (intrinsic)
+  # prior the validity constraints in signed_affine_prior keep the induced mixture ratio
+  # >= eps > 0 at the target and source points, so the standard posterior() denominator
+  # stays positive and no special handling is needed (the guard in posterior() is inactive).
   post = posterior(rho,dr_cond,n0)
   postlist = list()
   for(l in 1:L){
@@ -862,17 +910,24 @@ maximin_s_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,s
 }
 
 get_DORM_beta = function(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,smax,penalty = FALSE, alpha = 0.5,
-                         rho_pseudo = "NA", dr_type = "rf",normalize = FALSE, condA = FALSE){
-  
+                         rho_pseudo = "NA", dr_type = "rf",normalize = FALSE, condA = FALSE,
+                         signed_prior = FALSE){
+
   # Use sample splitting: beta = 0.5 (betaA + betaB)
-  
+  #
+  # signed_prior: if TRUE, use the intrinsic-source (signed-affine valid-mixture)
+  #   projection prior; see maximin_s_beta. Default FALSE reproduces standard DORM exactly.
+
   cat("Fitting density ratio model using",dr_type,"with conditional on A=",condA)
   if(penalty){
     cat("Fitting high dimensional DORM using elastic net, alpha=",alpha)
   }
-  
-  out1 = maximin_s_beta(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,smax,penalty,alpha,rho_pseudo,dr_type,normalize = normalize, condA = condA)
-  out2 = maximin_s_beta(Xtrainlist,Xlist,Ytrainlist,Ylist,X0train,X0,nlist,q,smax,penalty,alpha,rho_pseudo,dr_type,normalize = normalize, condA = condA)
+  if(signed_prior){
+    cat(" | using intrinsic-source signed-affine (valid-mixture) prior")
+  }
+
+  out1 = maximin_s_beta(Xlist,Xtrainlist,Ylist,Ytrainlist,X0,X0train,nlist,q,smax,penalty,alpha,rho_pseudo,dr_type,normalize = normalize, condA = condA, signed_prior = signed_prior)
+  out2 = maximin_s_beta(Xtrainlist,Xlist,Ytrainlist,Ylist,X0train,X0,nlist,q,smax,penalty,alpha,rho_pseudo,dr_type,normalize = normalize, condA = condA, signed_prior = signed_prior)
   opt.beta = 0.5 * (out1$beta_star + out2$beta_star)
   beta_MI = 0.5 * (out1$beta_MI + out2$beta_MI)
   P = 0.5 * (out1$beta_RAP + out2$beta_RAP)

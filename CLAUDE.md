@@ -41,44 +41,6 @@ adversarial shift; tune it with `src/Tuning.R` (`tuning_Y`, `tuning_surrogate`).
 Baselines for comparison live in `src/TransLasso-functions.R` and `src/TransLG-functions.R`
 (TransLasso, TransGLM via `glmtrans`, PTL). `get_err(X,Y,beta,q,nn)` computes MSE.
 
-## Single-cell application (singlecell/)
-
-Two-stage pipeline: Python preprocessing (notebooks) → R DORM run.
-
-**Preprocessing (Python/scanpy, run once):**
-1. `nips_preprocess_clean.ipynb` — from `fullbatch.h5ad` (paired CITE, 12 batches). RNA path:
-   counts → HVG (Seurat v3) → normalize_total → log1p → scale (clip ±10). ADT path:
-   counts → **CLR** (compositional, no clipping). Writes `processed/*_proc.h5ad`.
-2. `nips_export_processed_to_R_csv.ipynb` — exports processed objects to
-   `processed/csv_for_R/` as CSVs with R-safe, stable feature names (plus a
-   `feature_name_map` back to original gene/protein names). This is the boundary the R
-   script reads from.
-
-**Running DORM** — `singlecell/run_dorm_from_cite_nips_csv.R`:
-```
-Rscript singlecell/run_dorm_from_cite_nips_csv.R                       # defaults
-DORM_SOURCE_GROUPS=s2d5,s3d1 DORM_TARGET_GROUPS=s3d7 Rscript singlecell/run_dorm_from_cite_nips_csv.R
-```
-This script builds the DORM data contract from the CSVs, runs `get_DORM_beta`, runs the
-transfer baselines, and writes results to `singlecell/dorm_results/`
-(`*_dorm_data.rds`, `*_dorm_result.rds`, `*_summary.csv`). It is the reference example of
-wiring real data into the estimator; mirror its `make_x`/`make_y`/split logic when adding data.
-
-Configured entirely via env vars (all optional):
-- `DORM_PARTITION` — what defines a domain: `batch` (Ver1, default), `major_cell_type`
-  (Ver2), `t_cell_subtype` (Ver3, T cells only). See `partition_configs` in the script.
-- `DORM_SOURCE_GROUPS` / `DORM_TARGET_GROUPS` — comma-separated group ids; run is repeated
-  per target group. Source/target must be disjoint.
-- `DORM_PROTEIN_Y` — which ADT protein is the response (default `CD72_1`); `auto` screens all
-  proteins by CV elastic-net R² and picks the most RNA-predictable.
-- `DORM_RUN=false` — build/save the input object only (smoke test, no fit).
-- `DORM_RUN_TRANSFER=false` — skip TransLasso/TransGLM/PTL baselines.
-- `DORM_MAX_RNA_FEATURES`, `DORM_MAX_SOURCE_ROWS`, `DORM_MAX_TARGET_ROWS`,
-  `DORM_BENCHMARK_NTAR` — size/subsampling knobs (see `cfg` block).
-
-The script auto-locates the repo root by finding `src/Functions3.R`, so it runs from either
-the repo root or `singlecell/`.
-
 ## Simulations (simu/)
 
 `simu/Simu_*.R` are the paper's synthetic experiments (each sources data generators from

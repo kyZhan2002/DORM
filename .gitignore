@@ -54,3 +54,5 @@ data/output/
 
 # Large single-cell data (too big for GitHub's 100 MB limit)
 *.h5ad
+*.png
+*.tex

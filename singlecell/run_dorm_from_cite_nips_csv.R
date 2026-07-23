@@ -165,6 +165,21 @@ partition_configs <- list(
                       "CD8+ T CD57+ CD45RO+", "CD8+ T TIGIT+ CD45RO+",
                       "CD8+ T CD57+ CD45RA+", "CD4+ T activated integrinB7+"),
     target_groups = "T reg"
+  ),
+
+  ## Ver4: erythroid developmental subtypes as domains, mirroring the design of
+  ## the MIMAL BMMC real-data analysis (only the source/target/ADT DESIGN is borrowed;
+  ## methods and benchmarks remain the DORM family). Restrict to the 5 red-cell types
+  ## (11,948 cells total). Sources are the 3 nucleated stages; the two held-out targets
+  ## are the terminal state (Reticulocyte) and the upstream progenitor (MK/E prog).
+  ## Response ADTs to pair with this: CD71, CD36_1, CD105, CD49d.
+  erythroid_subtype = list(
+    label = "Ver4_erythroid_subtype_sources",
+    group_col = "cell_type",
+    subset_fun = function(meta) meta$cell_type %in% c(
+      "Proerythroblast", "Erythroblast", "Normoblast", "Reticulocyte", "MK/E prog"),
+    source_groups = c("Proerythroblast", "Erythroblast", "Normoblast"),
+    target_groups = c("Reticulocyte", "MK/E prog")
   )
 )
 
